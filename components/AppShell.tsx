@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -50,6 +50,11 @@ function initials(name: string) {
     .join("");
 }
 
+// ---------------------------------------------------------------------------
+// Navegación de escritorio: barra horizontal con menús desplegables.
+// El menú calcula su posición con JS (en vez de solo CSS) para no salirse
+// nunca del ancho de pantalla disponible, sin importar dónde caiga el botón.
+// ---------------------------------------------------------------------------
 function NavDropdown({
   label,
   items,
@@ -61,12 +66,44 @@ function NavDropdown({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
+
+  const MENU_WIDTH = 240; // debe coincidir con w-60 de abajo
+  const EDGE_MARGIN = 12; // separación mínima con el borde de la pantalla
+
+  useEffect(() => {
+    if (!open || !buttonRef.current) return;
+
+    const updatePosition = () => {
+      if (!buttonRef.current) return;
+      const rect = buttonRef.current.getBoundingClientRect();
+      const idealLeft = rect.right - MENU_WIDTH;
+      const maxLeft = window.innerWidth - MENU_WIDTH - EDGE_MARGIN;
+      const left = Math.max(EDGE_MARGIN, Math.min(idealLeft, maxLeft));
+      setMenuStyle({
+        position: "fixed",
+        top: rect.bottom + 8,
+        left,
+        width: MENU_WIDTH,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
 
   if (items.length === 0) return null;
 
   return (
     <div className="relative shrink-0">
       <button
+        ref={buttonRef}
         onClick={() => setOpen((o) => !o)}
         className={`flex items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
           open || active
@@ -90,7 +127,10 @@ function NavDropdown({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-2 w-60 overflow-hidden rounded-xl border border-black/5 bg-white py-1.5 shadow-panel">
+          <div
+            style={menuStyle}
+            className="z-20 w-60 overflow-hidden rounded-xl border border-black/5 bg-white py-1.5 shadow-panel"
+          >
             {items.map((item) => (
               <Link
                 key={item.href}
@@ -113,10 +153,108 @@ function NavDropdown({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Navegación mobile: cajón lateral a pantalla completa con todo en columna.
+// No depende de que varios botones entren en una fila, así que funciona
+// igual de bien en un celular chico que en uno grande o en una tablet.
+// ---------------------------------------------------------------------------
+interface NavSection {
+  title: string | null;
+  items: NavItem[];
+}
+
+function MobileMenuIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7}>
+      <path strokeLinecap="round" d="M3 5.5h14M3 10h14M3 14.5h14" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7}>
+      <path strokeLinecap="round" d="M5 5l10 10M15 5L5 15" />
+    </svg>
+  );
+}
+
+function MobileNavDrawer({
+  open,
+  onClose,
+  sections,
+  pathname,
+}: {
+  open: boolean;
+  onClose: () => void;
+  sections: NavSection[];
+  pathname: string;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-40 md:hidden">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute inset-y-0 right-0 flex w-[85vw] max-w-sm flex-col bg-white shadow-panel">
+        <div className="flex items-center justify-between border-b border-black/[0.06] px-4 py-3.5">
+          <span className="text-sm font-semibold text-ink-900">Menú</span>
+          <button
+            onClick={onClose}
+            aria-label="Cerrar menú"
+            className="rounded-lg p-1.5 text-ink-500 transition-colors hover:bg-black/[0.04]"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 py-3">
+          {sections.map((section, i) =>
+            section.items.length === 0 ? null : (
+              <div key={i} className="mb-2">
+                {section.title && (
+                  <p className="px-3 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-ink-400">
+                    {section.title}
+                  </p>
+                )}
+                <div className="space-y-0.5">
+                  {section.items.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={onClose}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-3 text-[15px] font-medium transition-colors ${
+                        pathname === item.href
+                          ? "bg-brand-light text-brand-dark"
+                          : "text-ink-700 hover:bg-black/[0.04]"
+                      }`}
+                    >
+                      <span className="text-lg">{item.icon}</span>
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { profile, signOut } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isAdmin = profile?.role === "admin";
   const isStaff = isAdmin || profile?.role === "guardia";
@@ -126,6 +264,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const operationItems = isStaff ? OPERATION_NAV_ITEMS : [];
   const adminItems = isAdmin ? ADMIN_NAV_ITEMS : [];
+
+  const sections: NavSection[] = [
+    { title: null, items: primaryItems },
+    { title: "Operación", items: operationItems },
+    { title: "Configuración", items: adminItems },
+    { title: "Mi cuenta", items: ACCOUNT_NAV_ITEMS },
+  ];
 
   const handleSignOut = async () => {
     await signOut();
@@ -176,7 +321,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="mx-auto max-w-6xl px-4 pb-2.5 sm:px-6">
-          <nav className="flex items-center gap-1">
+          {/* Barra horizontal — solo desde tablet/escritorio (md y más) */}
+          <nav className="hidden items-center gap-1 md:flex">
             <div className="no-scrollbar flex flex-1 gap-1 overflow-x-auto">
               {primaryItems.map((item) => (
                 <Link key={item.href} href={item.href} className={linkClass(item.href)}>
@@ -202,8 +348,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               active={ACCOUNT_NAV_ITEMS.some((i) => i.href === pathname)}
             />
           </nav>
+
+          {/* Botón de menú — solo en celular (debajo de md) */}
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="flex w-full items-center gap-2 rounded-lg border border-black/10 px-3 py-2 text-sm font-medium text-ink-700 transition-colors hover:bg-black/[0.03] md:hidden"
+          >
+            <MobileMenuIcon />
+            Menú
+          </button>
         </div>
       </header>
+
+      <MobileNavDrawer
+        open={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        sections={sections}
+        pathname={pathname}
+      />
+
       <main className="mx-auto max-w-6xl px-4 py-7 sm:px-6">{children}</main>
     </div>
   );
