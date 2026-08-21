@@ -178,8 +178,8 @@ function QrConsolaContent() {
       )}
 
       <div className="mx-auto mt-8 flex max-w-md flex-col items-center gap-5">
-        <div className="relative flex items-center justify-center">
-          <svg className="h-[19rem] w-[19rem] -rotate-90" viewBox="0 0 100 100">
+        <div className="relative flex w-full max-w-[19rem] items-center justify-center">
+          <svg className="aspect-square w-full -rotate-90" viewBox="0 0 100 100">
             <circle
               cx="50"
               cy="50"
@@ -201,7 +201,7 @@ function QrConsolaContent() {
               className="transition-[stroke-dashoffset] duration-1000 ease-linear"
             />
           </svg>
-          <div className="absolute flex h-72 w-72 items-center justify-center rounded-2xl bg-white p-4 shadow-panel">
+          <div className="absolute flex aspect-square w-[92%] items-center justify-center rounded-2xl bg-white p-4 shadow-panel">
             {qrDataUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={qrDataUrl} alt="Código QR de asistencia" className="h-full w-full" />
