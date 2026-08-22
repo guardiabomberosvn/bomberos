@@ -134,6 +134,61 @@ export interface GuardShift {
   notes: string | null;
 }
 
+export const OTHER_FORCE_SERVICES = [
+  "SERV.107 - V.N",
+  "SERV.107 - V.M",
+  "POLICIA DE LA PROV.",
+  "GUARDIA LOCAL",
+  "TRANSITO",
+  "ALUMBRADO",
+  "EPEC",
+  "BV. VILLA MARIA",
+  "ECOGAS",
+  "COPP. DE AGUA",
+  "GENDARMERIA",
+];
+
+export interface StockItem {
+  id: string;
+  organization_id: string;
+  name: string;
+  unit: string;
+  initial_stock: number;
+  min_stock: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StockWithdrawal {
+  id: string;
+  organization_id: string;
+  item_id: string;
+  quantity: number;
+  withdrawn_at: string;
+  operator_id: string | null;
+  withdrawn_by: string | null;
+  destination: string | null;
+  notes: string | null;
+  shift_id: string | null;
+}
+
+export interface OtherForceNotice {
+  id: string;
+  organization_id: string;
+  service_name: string;
+  called_at: string;
+  code: string | null;
+  cause: string;
+  address: string | null;
+  locality: string | null;
+  received_by_name: string | null;
+  taken_by: string | null;
+  shift_id: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
 export interface GuardVisit {
   id: string;
   organization_id: string;

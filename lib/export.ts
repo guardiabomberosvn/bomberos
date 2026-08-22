@@ -14,3 +14,20 @@ export function exportToExcel(
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
   XLSX.writeFile(workbook, filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`);
 }
+
+/**
+ * Igual que exportToExcel pero para varias hojas en un mismo archivo
+ * (ej: "Stock" + "Registro de retiros", como en la planilla original).
+ */
+export function exportMultiSheetExcel(
+  sheets: { name: string; rows: Record<string, string | number | null | undefined>[] }[],
+  filename: string
+) {
+  const workbook = XLSX.utils.book_new();
+  for (const sheet of sheets) {
+    const worksheet = XLSX.utils.json_to_sheet(sheet.rows);
+    // Excel no permite nombres de hoja de más de 31 caracteres.
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name.slice(0, 31));
+  }
+  XLSX.writeFile(workbook, filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`);
+}

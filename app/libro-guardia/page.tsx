@@ -1,24 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { exportToExcel } from "@/lib/export";
+import { StatsBarChart } from "@/components/StatsBarChart";
 import type {
   AgendaEvent,
   GuardCall,
   GuardShift,
   GuardVisit,
   MovementReason,
+  OtherForceNotice,
   Profile,
   Vehicle,
   VehicleMovement,
 } from "@/lib/types";
-import { MOVEMENT_REASON_LABELS } from "@/lib/types";
+import { MOVEMENT_REASON_LABELS, OTHER_FORCE_SERVICES } from "@/lib/types";
 
-type Tab = "turno" | "llamadas" | "visitas" | "movimientos" | "agenda";
+type Tab = "turno" | "llamadas" | "avisos" | "visitas" | "movimientos" | "agenda";
 
 function LibroGuardiaContent() {
   const { profile } = useAuth();
@@ -33,6 +35,7 @@ function LibroGuardiaContent() {
           [
             ["turno", "Turno"],
             ["llamadas", "Llamadas"],
+            ["avisos", "Avisos a otras fuerzas"],
             ["visitas", "Proveedores y visitas"],
             ["movimientos", "Movimientos de vehículos"],
             ["agenda", "Agenda"],
@@ -54,6 +57,7 @@ function LibroGuardiaContent() {
 
       {tab === "turno" && profile && <TurnoTab myId={profile.id} />}
       {tab === "llamadas" && profile && <LlamadasTab myId={profile.id} />}
+      {tab === "avisos" && profile && <AvisosTab myId={profile.id} />}
       {tab === "visitas" && profile && <VisitasTab myId={profile.id} />}
       {tab === "movimientos" && profile && <MovimientosTab myId={profile.id} />}
       {tab === "agenda" && profile && <AgendaTab myId={profile.id} />}
@@ -480,6 +484,330 @@ function LlamadasTab({ myId }: { myId: string }) {
                         Eliminar
                       </button>
                     </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Avisos a otras fuerzas ----------
+const AVISOS_MESES = [
+  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+];
+
+function AvisosTab({ myId }: { myId: string }) {
+  const [notices, setNotices] = useState<OtherForceNotice[]>([]);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [showStats, setShowStats] = useState(true);
+  const [serviceName, setServiceName] = useState("");
+  const [customService, setCustomService] = useState("");
+  const [calledAt, setCalledAt] = useState("");
+  const [code, setCode] = useState("");
+  const [cause, setCause] = useState("");
+  const [address, setAddress] = useState("");
+  const [locality, setLocality] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("other_force_notices")
+      .select("*")
+      .order("called_at", { ascending: false })
+      .limit(200);
+    const { data: profiles } = await supabase.from("profiles").select("id, full_name");
+    setNames(
+      new Map(((profiles as { id: string; full_name: string }[]) ?? []).map((p) => [p.id, p.full_name]))
+    );
+    setNotices((data as OtherForceNotice[]) ?? []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    load();
+    const channel = supabase
+      .channel("other-force-notices")
+      .on("postgres_changes", { event: "*", schema: "public", table: "other_force_notices" }, () => load())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const receivedByLabel = (n: OtherForceNotice) =>
+    (n.taken_by && names.get(n.taken_by)) || n.received_by_name || "—";
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const finalService = serviceName === "__otro__" ? customService.trim() : serviceName;
+    if (!finalService || !cause.trim()) return;
+    setError(null);
+
+    const { data: myProfile } = await supabase
+      .from("profiles")
+      .select("organization_id, full_name")
+      .eq("id", myId)
+      .single();
+
+    const { data: openShift } = await supabase
+      .from("guard_shifts")
+      .select("id")
+      .eq("organization_id", myProfile?.organization_id)
+      .is("closed_at", null)
+      .maybeSingle();
+
+    const { error: insertError } = await supabase.from("other_force_notices").insert({
+      organization_id: myProfile?.organization_id,
+      service_name: finalService,
+      called_at: calledAt ? new Date(calledAt).toISOString() : new Date().toISOString(),
+      code: code.trim() || null,
+      cause: cause.trim(),
+      address: address.trim() || null,
+      locality: locality.trim() || null,
+      received_by_name: myProfile?.full_name ?? null,
+      taken_by: myId,
+      shift_id: openShift?.id ?? null,
+      notes: notes.trim() || null,
+    });
+
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+    setServiceName("");
+    setCustomService("");
+    setCalledAt("");
+    setCode("");
+    setCause("");
+    setAddress("");
+    setLocality("");
+    setNotes("");
+    setShowForm(false);
+    load();
+  };
+
+  const handleDelete = async (n: OtherForceNotice) => {
+    if (!window.confirm("¿Eliminar este aviso?")) return;
+    const { error: deleteError } = await supabase.from("other_force_notices").delete().eq("id", n.id);
+    if (deleteError) setError(deleteError.message);
+    load();
+  };
+
+  const handleExport = () => {
+    exportToExcel(
+      notices.map((n) => ({
+        "Servicio / Fuerzas": n.service_name,
+        Fecha: new Date(n.called_at).toLocaleDateString("es-AR"),
+        "Hs de llamado": new Date(n.called_at).toLocaleTimeString("es-AR"),
+        Codigo: n.code ?? "",
+        "Causa del llamado": n.cause,
+        Direccion: n.address ?? "",
+        Localidad: n.locality ?? "",
+        "Guardia que recibió": receivedByLabel(n),
+        Observaciones: n.notes ?? "",
+      })),
+      "avisos-otras-fuerzas",
+      "Avisos"
+    );
+  };
+
+  const currentYear = new Date().getFullYear();
+  const stats = useMemo(() => {
+    const thisYear = notices.filter((n) => new Date(n.called_at).getFullYear() === currentYear);
+    const serviceCounts = new Map<string, number>();
+    for (const n of thisYear) {
+      serviceCounts.set(n.service_name, (serviceCounts.get(n.service_name) ?? 0) + 1);
+    }
+    const byService = Array.from(serviceCounts.entries())
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+
+    const byMonth = AVISOS_MESES.map((label, idx) => ({
+      label,
+      value: thisYear.filter((n) => new Date(n.called_at).getMonth() === idx).length,
+    }));
+
+    return { total: thisYear.length, byService, byMonth };
+  }, [notices, currentYear]);
+
+  return (
+    <div className="space-y-4 pt-4">
+      <div className="flex flex-wrap justify-end gap-2">
+        <button
+          onClick={handleExport}
+          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+        >
+          📥 Exportar
+        </button>
+        <button
+          onClick={() => setShowForm((s) => !s)}
+          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+        >
+          + Registrar aviso
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+      )}
+
+      <div className="rounded-xl border border-neutral-200 bg-white">
+        <button
+          onClick={() => setShowStats((s) => !s)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
+        >
+          <p className="text-sm font-semibold text-neutral-800">
+            📊 Estadísticas {currentYear} · {stats.total} aviso{stats.total === 1 ? "" : "s"}
+          </p>
+          <span className="text-xs text-neutral-400">{showStats ? "Ocultar" : "Mostrar"}</span>
+        </button>
+        {showStats && (
+          <div className="grid grid-cols-1 gap-6 border-t border-neutral-100 px-4 py-4 lg:grid-cols-2">
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase text-neutral-500">
+                Por servicio / fuerza
+              </p>
+              <StatsBarChart data={stats.byService} />
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase text-neutral-500">Por mes</p>
+              <StatsBarChart data={stats.byMonth} color="bg-orange-500" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showForm && (
+        <form
+          onSubmit={handleCreate}
+          className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2"
+        >
+          <select
+            value={serviceName}
+            onChange={(e) => setServiceName(e.target.value)}
+            required
+            className="rounded-md border border-neutral-300 px-3 py-2"
+          >
+            <option value="">Servicio / fuerza…</option>
+            {OTHER_FORCE_SERVICES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+            <option value="__otro__">Otro (especificar)…</option>
+          </select>
+          {serviceName === "__otro__" && (
+            <input
+              value={customService}
+              onChange={(e) => setCustomService(e.target.value)}
+              placeholder="Nombre del servicio"
+              required
+              className="rounded-md border border-neutral-300 px-3 py-2"
+            />
+          )}
+          <input
+            type="datetime-local"
+            value={calledAt}
+            onChange={(e) => setCalledAt(e.target.value)}
+            className="rounded-md border border-neutral-300 px-3 py-2"
+          />
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="Código (opcional)"
+            className="rounded-md border border-neutral-300 px-3 py-2"
+          />
+          <input
+            value={cause}
+            onChange={(e) => setCause(e.target.value)}
+            placeholder="Causa del llamado"
+            required
+            className="rounded-md border border-neutral-300 px-3 py-2 sm:col-span-2"
+          />
+          <input
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="Dirección"
+            className="rounded-md border border-neutral-300 px-3 py-2"
+          />
+          <input
+            value={locality}
+            onChange={(e) => setLocality(e.target.value)}
+            placeholder="Localidad / barrio"
+            className="rounded-md border border-neutral-300 px-3 py-2"
+          />
+          <input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Observaciones (opcional)"
+            className="rounded-md border border-neutral-300 px-3 py-2 sm:col-span-2"
+          />
+          <button
+            type="submit"
+            className="rounded-md bg-brand py-2 text-sm font-medium text-white hover:bg-brand-dark sm:col-span-2"
+          >
+            Guardar aviso
+          </button>
+        </form>
+      )}
+
+      <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+        <table className="min-w-full divide-y divide-neutral-200 text-sm">
+          <thead className="bg-neutral-50 text-left text-neutral-500">
+            <tr>
+              <th className="px-4 py-2 font-medium">Servicio</th>
+              <th className="px-4 py-2 font-medium">Fecha / hora</th>
+              <th className="px-4 py-2 font-medium">Código</th>
+              <th className="px-4 py-2 font-medium">Causa</th>
+              <th className="px-4 py-2 font-medium">Localidad</th>
+              <th className="px-4 py-2 font-medium">Recibió</th>
+              <th className="px-4 py-2 font-medium"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-100">
+            {loading ? (
+              <tr>
+                <td colSpan={7} className="px-4 py-6 text-center text-neutral-500">
+                  Cargando…
+                </td>
+              </tr>
+            ) : notices.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-4 py-6 text-center text-neutral-500">
+                  Sin avisos registrados.
+                </td>
+              </tr>
+            ) : (
+              notices.map((n) => (
+                <tr key={n.id}>
+                  <td className="px-4 py-2 text-neutral-800">{n.service_name}</td>
+                  <td className="px-4 py-2 text-neutral-500">
+                    {new Date(n.called_at).toLocaleString("es-AR")}
+                  </td>
+                  <td className="px-4 py-2 text-neutral-600">{n.code ?? "—"}</td>
+                  <td className="px-4 py-2 text-neutral-600">{n.cause}</td>
+                  <td className="px-4 py-2 text-neutral-600">
+                    {n.address ? `${n.address}, ` : ""}
+                    {n.locality ?? ""}
+                  </td>
+                  <td className="px-4 py-2 text-neutral-600">{receivedByLabel(n)}</td>
+                  <td className="px-4 py-2">
+                    <button
+                      onClick={() => handleDelete(n)}
+                      className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                    >
+                      Eliminar
+                    </button>
                   </td>
                 </tr>
               ))

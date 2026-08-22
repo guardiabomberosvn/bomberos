@@ -29,6 +29,7 @@ const OPERATION_NAV_ITEMS: NavItem[] = [
   { href: "/flota", label: "Flota", icon: "🚒" },
   { href: "/combustible", label: "Combustible", icon: "⛽" },
   { href: "/mantenimiento", label: "Mantenimiento", icon: "🔧" },
+  { href: "/stock", label: "Stock", icon: "📦" },
 ];
 
 const ADMIN_NAV_ITEMS: NavItem[] = [
