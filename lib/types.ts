@@ -298,10 +298,6 @@ export const INCIDENT_CATEGORIES: IncidentCategory[] = [
   "Organización funcional",
 ];
 
-export type Barrio = "Villa Nueva" | "Villa María" | "Otro";
-
-export const BARRIOS: Barrio[] = ["Villa Nueva", "Villa María", "Otro"];
-
 export interface Intervention {
   id: string;
   organization_id: string;
@@ -316,7 +312,7 @@ export interface Intervention {
   parte_number: number | null;
   caller_phone: string | null;
   address: string | null;
-  barrio: Barrio | null;
+  barrio: string | null;
   incident_category: IncidentCategory | null;
   fuel_notes: string | null;
   shift_id: string | null;

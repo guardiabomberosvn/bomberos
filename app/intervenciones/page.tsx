@@ -8,14 +8,13 @@ import { StatsBarChart } from "@/components/StatsBarChart";
 import { supabase } from "@/lib/supabase";
 import { exportToExcel } from "@/lib/export";
 import type {
-  Barrio,
   IncidentCategory,
   Intervention,
   InterventionUnit,
   Profile,
   Vehicle,
 } from "@/lib/types";
-import { BARRIOS, INCIDENT_CATEGORIES } from "@/lib/types";
+import { INCIDENT_CATEGORIES } from "@/lib/types";
 
 const MESES = [
   "Ene", "Feb", "Mar", "Abr", "May", "Jun",
@@ -39,7 +38,7 @@ function IntervencionesContent() {
   const [incidentCategory, setIncidentCategory] = useState<IncidentCategory | "">("");
   const [callerPhone, setCallerPhone] = useState("");
   const [address, setAddress] = useState("");
-  const [barrio, setBarrio] = useState<Barrio | "">("");
+  const [barrio, setBarrio] = useState("");
   const [personnelInCharge, setPersonnelInCharge] = useState("");
   const [operatorId, setOperatorId] = useState("");
   const [fuelNotes, setFuelNotes] = useState("");
@@ -244,6 +243,11 @@ function IntervencionesContent() {
     exportToExcel(rows, "intervenciones", "Intervenciones");
   };
 
+  const knownBarrios = useMemo(
+    () => Array.from(new Set(interventions.map((i) => i.barrio).filter((b): b is string => !!b))).sort(),
+    [interventions]
+  );
+
   // ---------- Estadísticas ----------
   const currentYear = new Date().getFullYear();
   const stats = useMemo(() => {
@@ -256,10 +260,14 @@ function IntervencionesContent() {
       value: thisYear.filter((i) => i.incident_category === cat).length,
     }));
 
-    const byBarrio = BARRIOS.map((b) => ({
-      label: b,
-      value: thisYear.filter((i) => i.barrio === b).length,
-    }));
+    const barrioCounts = new Map<string, number>();
+    for (const i of thisYear) {
+      if (i.barrio) barrioCounts.set(i.barrio, (barrioCounts.get(i.barrio) ?? 0) + 1);
+    }
+    const byBarrio = Array.from(barrioCounts.entries())
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
 
     const byMonth = MESES.map((label, idx) => ({
       label,
@@ -316,7 +324,7 @@ function IntervencionesContent() {
             </div>
             <div>
               <p className="mb-2 text-xs font-semibold uppercase text-neutral-500">
-                Por barrio
+                Por barrio (top 8)
               </p>
               <StatsBarChart data={stats.byBarrio} color="bg-emerald-500" />
             </div>
@@ -366,18 +374,18 @@ function IntervencionesContent() {
             placeholder="Teléfono de quien llamó"
             className="rounded-md border border-neutral-300 px-3 py-2"
           />
-          <select
+          <input
             value={barrio}
-            onChange={(e) => setBarrio(e.target.value as Barrio)}
+            onChange={(e) => setBarrio(e.target.value)}
+            placeholder="Barrio / localidad"
+            list="barrios-conocidos"
             className="rounded-md border border-neutral-300 px-3 py-2"
-          >
-            <option value="">Barrio…</option>
-            {BARRIOS.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
+          />
+          <datalist id="barrios-conocidos">
+            {knownBarrios.map((b) => (
+              <option key={b} value={b} />
             ))}
-          </select>
+          </datalist>
           <input
             value={address}
             onChange={(e) => setAddress(e.target.value)}
