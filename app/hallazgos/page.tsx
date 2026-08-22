@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
+import { notifyMaintenanceContacts } from "@/lib/maintenance";
 import type { FindingPriority, MaintenanceFinding, Vehicle } from "@/lib/types";
 import { FINDING_PRIORITY_LABELS, FINDING_STATUS_LABELS } from "@/lib/types";
 
@@ -119,6 +120,18 @@ function HallazgosContent() {
       setError(insertError.message);
       return;
     }
+
+    // Aviso por Telegram a quienes el admin configuró para recibir alertas
+    // de mantenimiento (no bloqueamos el formulario esperando esto).
+    notifyMaintenanceContacts(
+      profile.organization_id,
+      `🚧 <b>Nuevo hallazgo reportado</b>\n` +
+        `${vehicleName(vehicleId || null)}${area ? " · " + area : ""}\n` +
+        `${description.trim()}\n` +
+        `Prioridad: ${FINDING_PRIORITY_LABELS[priority]}\n` +
+        `Informado por: ${profile.full_name}`
+    );
+
     setVehicleId("");
     setArea("");
     setDescription("");

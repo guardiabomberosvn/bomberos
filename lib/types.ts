@@ -13,6 +13,7 @@ export interface Profile {
   is_active: boolean;
   availability: Availability;
   telegram_chat_id: string | null;
+  notify_maintenance: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -194,6 +195,7 @@ export interface MaintenanceRecord {
   created_by: string;
   created_at: string;
   completed_at: string | null;
+  alert_notified_at: string | null;
 }
 
 // Nivel de alerta visual calculado en el cliente comparando la fecha/km

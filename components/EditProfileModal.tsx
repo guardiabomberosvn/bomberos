@@ -20,6 +20,7 @@ export function EditProfileModal({
   const [phone, setPhone] = useState(profile.phone ?? "");
   const [role, setRole] = useState<Role>(profile.role);
   const [isActive, setIsActive] = useState(profile.is_active);
+  const [notifyMaintenance, setNotifyMaintenance] = useState(profile.notify_maintenance);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +40,7 @@ export function EditProfileModal({
         phone: phone.trim() || null,
         role,
         is_active: isActive,
+        notify_maintenance: notifyMaintenance,
       })
       .eq("id", profile.id);
     setSaving(false);
@@ -101,6 +103,25 @@ export function EditProfileModal({
             />
             <span className="font-medium text-neutral-700">
               Personal activo
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={notifyMaintenance}
+              onChange={(e) => setNotifyMaintenance(e.target.checked)}
+            />
+            <span>
+              <span className="font-medium text-neutral-700">
+                Recibe alertas de mantenimiento por Telegram
+              </span>
+              <span className="block text-xs text-neutral-500">
+                Le llega un aviso cuando alguien reporta un hallazgo o cuando
+                un service entra en 🟠 muy próximo / 🔴 vencido (requiere
+                tener Telegram vinculado en "Mi cuenta").
+              </span>
             </span>
           </label>
         </div>

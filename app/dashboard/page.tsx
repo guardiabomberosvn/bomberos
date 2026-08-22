@@ -7,7 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { getMaintenanceAlertLevel } from "@/lib/maintenance";
+import { checkAndNotifyMaintenanceDueDates, getMaintenanceAlertLevel } from "@/lib/maintenance";
 import type { Emergency, MaintenanceRecord, Profile, Vehicle } from "@/lib/types";
 
 function DashboardContent() {
@@ -48,8 +48,13 @@ function DashboardContent() {
           .select("*")
           .neq("status", "completado");
         const { data: v } = await supabase.from("vehicles").select("*");
-        setMaintenanceRecords((maintenance as MaintenanceRecord[]) ?? []);
-        setVehicles((v as Vehicle[]) ?? []);
+        const maintenanceList = (maintenance as MaintenanceRecord[]) ?? [];
+        const vehicleList = (v as Vehicle[]) ?? [];
+        setMaintenanceRecords(maintenanceList);
+        setVehicles(vehicleList);
+        // Avisa por Telegram (a los contactos configurados) las órdenes que
+        // acaban de entrar en alerta. No bloqueamos el dashboard por esto.
+        checkAndNotifyMaintenanceDueDates(profile.organization_id, maintenanceList, vehicleList);
       }
 
       setPersonal((profiles as Profile[]) ?? []);

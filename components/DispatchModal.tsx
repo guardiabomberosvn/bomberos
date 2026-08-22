@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { sendTelegramMessage } from "@/lib/telegram";
+import { sendTelegramAlert } from "@/lib/telegram";
 import type { DispatchGroup, EmergencyTarget, EmergencyType, Profile } from "@/lib/types";
 
 export function DispatchModal({
@@ -129,9 +129,16 @@ export function DispatchModal({
           }
         : undefined;
 
+      // Manda el aviso y, aparte, un par de recordatorios cortos más (sin
+      // botones) para que el celular suene/vibre varias veces y la alerta
+      // se note más — sin quedarnos esperando acá a que terminen.
+      const pingText = needsResponse
+        ? "🔔 Alerta activa — todavía no respondiste. Tocá ACUDO o NO ACUDO en el mensaje de arriba."
+        : "🔔 Recordatorio: hay un aviso activo en Emergencias.";
+
       await Promise.all(
         recipients.map((p) =>
-          sendTelegramMessage(p.telegram_chat_id as string, message, replyMarkup)
+          sendTelegramAlert(p.telegram_chat_id as string, message, replyMarkup, pingText)
         )
       );
     } catch {

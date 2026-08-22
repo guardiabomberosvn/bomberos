@@ -36,3 +36,36 @@ export async function sendTelegramMessage(
 export function getTelegramBotUsername() {
   return process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "";
 }
+
+/**
+ * Manda el mensaje principal (con botones ACUDO/NO ACUDO si corresponde) y,
+ * aparte, sin bloquear a quien está accionando la alarma, manda algunos
+ * recordatorios cortos más unos segundos después — así el celular suena o
+ * vibra varias veces y la alerta se nota más, en vez de un único aviso que
+ * puede pasar desapercibido. Los recordatorios NO llevan botones (para no
+ * duplicar los de ACUDO/NO ACUDO): son solo para llamar la atención de
+ * nuevo, la respuesta se sigue dando desde el primer mensaje.
+ */
+export async function sendTelegramAlert(
+  chatId: string,
+  text: string,
+  replyMarkup?: { inline_keyboard: { text: string; callback_data: string }[][] },
+  pingText?: string,
+  pingCount = 2,
+  pingDelayMs = 4000
+) {
+  const result = await sendTelegramMessage(chatId, text, replyMarkup);
+
+  if (pingText && pingCount > 0) {
+    // A propósito sin "await" acá: los recordatorios siguen mandándose en
+    // segundo plano después de que la función ya devolvió el resultado.
+    (async () => {
+      for (let i = 0; i < pingCount; i++) {
+        await new Promise((resolve) => setTimeout(resolve, pingDelayMs));
+        await sendTelegramMessage(chatId, pingText);
+      }
+    })();
+  }
+
+  return result;
+}
