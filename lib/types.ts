@@ -121,6 +121,17 @@ export interface GuardCall {
   status: "abierta" | "derivada" | "cerrada";
   created_at: string;
   closed_at: string | null;
+  shift_id: string | null;
+}
+
+export interface GuardShift {
+  id: string;
+  organization_id: string;
+  opened_by: string;
+  opened_at: string;
+  closed_by: string | null;
+  closed_at: string | null;
+  notes: string | null;
 }
 
 export interface GuardVisit {

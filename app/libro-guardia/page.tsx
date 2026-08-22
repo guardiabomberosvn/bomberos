@@ -9,6 +9,7 @@ import { exportToExcel } from "@/lib/export";
 import type {
   AgendaEvent,
   GuardCall,
+  GuardShift,
   GuardVisit,
   MovementReason,
   Profile,
@@ -17,11 +18,11 @@ import type {
 } from "@/lib/types";
 import { MOVEMENT_REASON_LABELS } from "@/lib/types";
 
-type Tab = "llamadas" | "visitas" | "movimientos" | "agenda";
+type Tab = "turno" | "llamadas" | "visitas" | "movimientos" | "agenda";
 
 function LibroGuardiaContent() {
   const { profile } = useAuth();
-  const [tab, setTab] = useState<Tab>("llamadas");
+  const [tab, setTab] = useState<Tab>("turno");
 
   return (
     <div className="space-y-6">
@@ -30,6 +31,7 @@ function LibroGuardiaContent() {
       <div className="flex flex-wrap gap-1 border-b border-neutral-200">
         {(
           [
+            ["turno", "Turno"],
             ["llamadas", "Llamadas"],
             ["visitas", "Proveedores y visitas"],
             ["movimientos", "Movimientos de vehículos"],
@@ -50,10 +52,209 @@ function LibroGuardiaContent() {
         ))}
       </div>
 
+      {tab === "turno" && profile && <TurnoTab myId={profile.id} />}
       {tab === "llamadas" && profile && <LlamadasTab myId={profile.id} />}
       {tab === "visitas" && profile && <VisitasTab myId={profile.id} />}
       {tab === "movimientos" && profile && <MovimientosTab myId={profile.id} />}
       {tab === "agenda" && profile && <AgendaTab myId={profile.id} />}
+    </div>
+  );
+}
+
+// ---------- Turno de guardia ----------
+function TurnoTab({ myId }: { myId: string }) {
+  const [openShift, setOpenShift] = useState<GuardShift | null>(null);
+  const [recentShifts, setRecentShifts] = useState<GuardShift[]>([]);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const [showCloseForm, setShowCloseForm] = useState(false);
+  const [closeNotes, setCloseNotes] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    const { data: open } = await supabase
+      .from("guard_shifts")
+      .select("*")
+      .is("closed_at", null)
+      .maybeSingle();
+    const { data: recent } = await supabase
+      .from("guard_shifts")
+      .select("*")
+      .not("closed_at", "is", null)
+      .order("closed_at", { ascending: false })
+      .limit(10);
+    const { data: profiles } = await supabase.from("profiles").select("id, full_name");
+
+    setNames(
+      new Map(((profiles as { id: string; full_name: string }[]) ?? []).map((p) => [p.id, p.full_name]))
+    );
+    setOpenShift((open as GuardShift) ?? null);
+    setRecentShifts((recent as GuardShift[]) ?? []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    load();
+    const channel = supabase
+      .channel("guard-shifts")
+      .on("postgres_changes", { event: "*", schema: "public", table: "guard_shifts" }, () => load())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const nameOf = (id: string) => names.get(id) ?? "—";
+
+  const formatElapsed = (startIso: string) => {
+    const mins = Math.max(0, Math.round((Date.now() - new Date(startIso).getTime()) / 60000));
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  const handleOpen = async () => {
+    setError(null);
+    setWorking(true);
+
+    const { data: myProfile } = await supabase
+      .from("profiles")
+      .select("organization_id")
+      .eq("id", myId)
+      .single();
+
+    const { error: insertError } = await supabase.from("guard_shifts").insert({
+      organization_id: myProfile?.organization_id,
+      opened_by: myId,
+    });
+
+    setWorking(false);
+    if (insertError) {
+      setError(
+        insertError.message.includes("guard_shifts_one_open")
+          ? "Ya hay un turno abierto — cerralo antes de abrir uno nuevo."
+          : insertError.message
+      );
+      return;
+    }
+    load();
+  };
+
+  const handleClose = async () => {
+    if (!openShift) return;
+    setError(null);
+    setWorking(true);
+
+    const { error: updateError } = await supabase
+      .from("guard_shifts")
+      .update({
+        closed_by: myId,
+        closed_at: new Date().toISOString(),
+        notes: closeNotes.trim() || null,
+      })
+      .eq("id", openShift.id);
+
+    setWorking(false);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    setShowCloseForm(false);
+    setCloseNotes("");
+    load();
+  };
+
+  return (
+    <div className="space-y-4 pt-4">
+      {error && (
+        <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+      )}
+
+      {loading ? (
+        <p className="text-sm text-neutral-500">Cargando…</p>
+      ) : openShift ? (
+        <div className="rounded-xl border-2 border-brand bg-brand-light p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-brand-dark">
+            Turno abierto
+          </p>
+          <p className="mt-1 text-lg font-semibold text-neutral-900">{nameOf(openShift.opened_by)}</p>
+          <p className="text-sm text-neutral-600">
+            Desde las {new Date(openShift.opened_at).toLocaleString("es-AR")} · {formatElapsed(openShift.opened_at)} en curso
+          </p>
+
+          {!showCloseForm ? (
+            <button
+              onClick={() => setShowCloseForm(true)}
+              className="mt-3 rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-900"
+            >
+              Cerrar turno
+            </button>
+          ) : (
+            <div className="mt-3 space-y-2">
+              <textarea
+                value={closeNotes}
+                onChange={(e) => setCloseNotes(e.target.value)}
+                placeholder="Novedades para dejar asentadas (opcional)"
+                rows={2}
+                className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowCloseForm(false)}
+                  className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleClose}
+                  disabled={working}
+                  className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-60"
+                >
+                  {working ? "Cerrando…" : "Confirmar cierre"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-5 text-center">
+          <p className="text-sm text-neutral-600">No hay ningún turno abierto en este momento.</p>
+          <button
+            onClick={handleOpen}
+            disabled={working}
+            className="mt-3 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-60"
+          >
+            {working ? "Abriendo…" : "+ Abrir turno"}
+          </button>
+        </div>
+      )}
+
+      {recentShifts.length > 0 && (
+        <div className="rounded-xl border border-neutral-200 bg-white">
+          <div className="border-b border-neutral-200 px-4 py-2">
+            <p className="text-sm font-semibold text-neutral-700">Turnos anteriores</p>
+          </div>
+          <ul className="divide-y divide-neutral-100">
+            {recentShifts.map((s) => (
+              <li key={s.id} className="px-4 py-3 text-sm">
+                <p className="font-medium text-neutral-800">
+                  {nameOf(s.opened_by)}
+                  {s.closed_by && s.closed_by !== s.opened_by
+                    ? ` → cerrado por ${nameOf(s.closed_by)}`
+                    : ""}
+                </p>
+                <p className="text-xs text-neutral-500">
+                  {new Date(s.opened_at).toLocaleString("es-AR")}
+                  {s.closed_at ? ` — ${new Date(s.closed_at).toLocaleString("es-AR")}` : ""}
+                </p>
+                {s.notes && <p className="mt-1 text-neutral-600">{s.notes}</p>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -95,6 +296,14 @@ function LlamadasTab({ myId }: { myId: string }) {
       .eq("id", myId)
       .single();
 
+    // Si hay un turno abierto, la llamada queda asociada a ese turno.
+    const { data: openShift } = await supabase
+      .from("guard_shifts")
+      .select("id")
+      .eq("organization_id", myProfile?.organization_id)
+      .is("closed_at", null)
+      .maybeSingle();
+
     const { error: insertError } = await supabase.from("guard_calls").insert({
       organization_id: myProfile?.organization_id,
       caller_name: callerName.trim() || null,
@@ -104,6 +313,7 @@ function LlamadasTab({ myId }: { myId: string }) {
       notes: notes.trim() || null,
       taken_by: myId,
       status: derivedTo.trim() ? "derivada" : "abierta",
+      shift_id: openShift?.id ?? null,
     });
 
     if (insertError) {
