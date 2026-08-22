@@ -226,6 +226,27 @@ export const MAINTENANCE_ALERT_LABELS: Record<MaintenanceAlertLevel, string> = {
   vencido: "🔴 Vencido",
 };
 
+export type IncidentCategory =
+  | "Incendio"
+  | "Accidente"
+  | "Salvataje"
+  | "Rescate"
+  | "Mantenimiento / Tareas grales."
+  | "Organización funcional";
+
+export const INCIDENT_CATEGORIES: IncidentCategory[] = [
+  "Incendio",
+  "Accidente",
+  "Salvataje",
+  "Rescate",
+  "Mantenimiento / Tareas grales.",
+  "Organización funcional",
+];
+
+export type Barrio = "Villa Nueva" | "Villa María" | "Otro";
+
+export const BARRIOS: Barrio[] = ["Villa Nueva", "Villa María", "Otro"];
+
 export interface Intervention {
   id: string;
   organization_id: string;
@@ -237,6 +258,13 @@ export interface Intervention {
   observations: string | null;
   created_by: string;
   created_at: string;
+  parte_number: number | null;
+  caller_phone: string | null;
+  address: string | null;
+  barrio: Barrio | null;
+  incident_category: IncidentCategory | null;
+  fuel_notes: string | null;
+  shift_id: string | null;
 }
 
 export interface InterventionUnit {
