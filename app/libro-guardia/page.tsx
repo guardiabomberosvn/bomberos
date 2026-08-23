@@ -170,6 +170,21 @@ function TurnoTab({ myId }: { myId: string }) {
     load();
   };
 
+  const handleDeleteShift = async (shift: GuardShift) => {
+    if (
+      !window.confirm(
+        "¿Eliminar este turno del historial? Esta acción no se puede deshacer."
+      )
+    )
+      return;
+    const { error: deleteError } = await supabase
+      .from("guard_shifts")
+      .delete()
+      .eq("id", shift.id);
+    if (deleteError) setError(deleteError.message);
+    load();
+  };
+
   return (
     <div className="space-y-4 pt-4">
       {error && (
@@ -242,18 +257,26 @@ function TurnoTab({ myId }: { myId: string }) {
           </div>
           <ul className="divide-y divide-neutral-100">
             {recentShifts.map((s) => (
-              <li key={s.id} className="px-4 py-3 text-sm">
-                <p className="font-medium text-neutral-800">
-                  {nameOf(s.opened_by)}
-                  {s.closed_by && s.closed_by !== s.opened_by
-                    ? ` → cerrado por ${nameOf(s.closed_by)}`
-                    : ""}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  {new Date(s.opened_at).toLocaleString("es-AR")}
-                  {s.closed_at ? ` — ${new Date(s.closed_at).toLocaleString("es-AR")}` : ""}
-                </p>
-                {s.notes && <p className="mt-1 text-neutral-600">{s.notes}</p>}
+              <li key={s.id} className="flex items-start justify-between gap-2 px-4 py-3 text-sm">
+                <div>
+                  <p className="font-medium text-neutral-800">
+                    {nameOf(s.opened_by)}
+                    {s.closed_by && s.closed_by !== s.opened_by
+                      ? ` → cerrado por ${nameOf(s.closed_by)}`
+                      : ""}
+                  </p>
+                  <p className="text-xs text-neutral-500">
+                    {new Date(s.opened_at).toLocaleString("es-AR")}
+                    {s.closed_at ? ` — ${new Date(s.closed_at).toLocaleString("es-AR")}` : ""}
+                  </p>
+                  {s.notes && <p className="mt-1 text-neutral-600">{s.notes}</p>}
+                </div>
+                <button
+                  onClick={() => handleDeleteShift(s)}
+                  className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                >
+                  Eliminar
+                </button>
               </li>
             ))}
           </ul>
