@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { sendTelegramMessage } from "@/lib/telegram";
-import type { MaintenanceAlertLevel, MaintenanceRecord, Vehicle } from "@/lib/types";
+import type { MaintenanceAlertLevel, MaintenanceRecord, Profile, Vehicle } from "@/lib/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -65,50 +65,69 @@ export async function notifyMaintenanceContacts(organizationId: string, message:
   const recipients = ((data as { telegram_chat_id: string | null }[]) ?? []).filter(
     (r) => r.telegram_chat_id
   );
-
   await Promise.all(
     recipients.map((r) => sendTelegramMessage(r.telegram_chat_id as string, message))
   );
 }
 
 /**
+ * Manda un mensaje de Telegram puntual a la persona asignada como
+ * responsable de una orden de mantenimiento (o de un hallazgo convertido en
+ * orden), si esa persona tiene el Telegram vinculado. Si no lo tiene, no
+ * hace nada (no hay forma de avisarle por ese medio).
+ */
+export async function notifyResponsible(responsibleProfile: Profile | undefined | null, message: string) {
+  if (!responsibleProfile?.telegram_chat_id) return;
+  await sendTelegramMessage(responsibleProfile.telegram_chat_id, message);
+}
+
+const ALERT_LEVELS_TO_NOTIFY: MaintenanceAlertLevel[] = ["proximo", "muy_proximo", "vencido"];
+
+const ALERT_LEVEL_TELEGRAM_LABELS: Record<string, string> = {
+  proximo: "🟡 Próximo a vencer",
+  muy_proximo: "🟠 Muy próximo a vencer",
+  vencido: "🔴 VENCIDO",
+};
+
+/**
  * Revisa las órdenes de mantenimiento pendientes y avisa por Telegram (a los
- * contactos configurados) las que acaban de entrar en 🟠 muy próximo o
- * 🔴 vencido, una sola vez por orden (usa alert_notified_at para no repetir
- * el aviso en cada visita al dashboard). Si dos personas tienen la app
- * abierta al mismo tiempo, el "claim" con `.is('alert_notified_at', null)`
- * asegura que el aviso se mande una sola vez igual.
+ * contactos configurados) las que están en 🟡 próximo, 🟠 muy próximo o
+ * 🔴 vencido. Avisa una vez por cada nivel (guarda el último nivel avisado en
+ * alert_notified_level), así que si una orden escala de próximo a vencido sí
+ * vuelve a avisar, pero no repite el aviso mientras se mantenga en el mismo
+ * nivel. Si dos personas tienen la app abierta al mismo tiempo, el "claim"
+ * con el update condicional asegura que el aviso se mande una sola vez igual.
  */
 export async function checkAndNotifyMaintenanceDueDates(
   organizationId: string,
   records: MaintenanceRecord[],
   vehicles: Vehicle[]
 ) {
-  const pending = records.filter((r) => r.status !== "completado" && !r.alert_notified_at);
+  const pending = records.filter((r) => r.status !== "completado");
 
   for (const r of pending) {
     const vehicle = vehicles.find((v) => v.id === r.vehicle_id);
     const level = getMaintenanceAlertLevel(r, vehicle?.km);
-    if (level !== "vencido" && level !== "muy_proximo") continue;
+    if (!ALERT_LEVELS_TO_NOTIFY.includes(level)) continue;
+    if (r.alert_notified_level === level) continue;
 
-    // "Reclama" el aviso: si otra sesión ya lo marcó primero, esta
-    // actualización no toca ninguna fila y no mandamos el mensaje duplicado.
+    // "Reclama" el aviso de este nivel: si otra sesión ya lo marcó primero
+    // con el mismo nivel, esta actualización no toca ninguna fila y no
+    // mandamos el mensaje duplicado.
     const { data: claimed } = await supabase
       .from("maintenance_records")
-      .update({ alert_notified_at: new Date().toISOString() })
+      .update({ alert_notified_level: level, alert_notified_at: new Date().toISOString() })
       .eq("id", r.id)
-      .is("alert_notified_at", null)
+      .or(`alert_notified_level.is.null,alert_notified_level.neq.${level}`)
       .select("id");
-
     if (!claimed || claimed.length === 0) continue;
 
-    const label = level === "vencido" ? "🔴 VENCIDO" : "🟠 Muy próximo a vencer";
+    const label = ALERT_LEVEL_TELEGRAM_LABELS[level] ?? level;
     const message =
       `🔧 <b>Mantenimiento ${label}</b>\n` +
       `${r.work}${vehicle ? " — " + vehicle.name : ""}\n` +
       (r.target_date ? `Fecha objetivo: ${r.target_date}\n` : "") +
       `Revisalo en la app, sección Mantenimiento.`;
-
     await notifyMaintenanceContacts(organizationId, message);
   }
 }

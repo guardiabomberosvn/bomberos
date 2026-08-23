@@ -253,6 +253,7 @@ export interface MaintenanceRecord {
   type: MaintenanceType;
   work: string;
   responsible: string | null;
+  responsible_id: string | null;
   target_date: string | null;
   target_km: number | null;
   status: MaintenanceStatus;
@@ -262,6 +263,7 @@ export interface MaintenanceRecord {
   created_at: string;
   completed_at: string | null;
   alert_notified_at: string | null;
+  alert_notified_level: MaintenanceAlertLevel | null;
 }
 
 // Nivel de alerta visual calculado en el cliente comparando la fecha/km

@@ -6,11 +6,12 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { getMaintenanceAlertLevel } from "@/lib/maintenance";
+import { getMaintenanceAlertLevel, notifyResponsible } from "@/lib/maintenance";
 import type {
   MaintenanceRecord,
   MaintenanceStatus,
   MaintenanceType,
+  Profile,
   Vehicle,
 } from "@/lib/types";
 import {
@@ -32,13 +33,14 @@ function MantenimientoContent() {
   const searchParams = useSearchParams();
   const [records, setRecords] = useState<MaintenanceRecord[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [personal, setPersonal] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [vehicleId, setVehicleId] = useState("");
   const [type, setType] = useState<MaintenanceType>("preventivo");
   const [work, setWork] = useState("");
-  const [responsible, setResponsible] = useState("");
+  const [responsibleId, setResponsibleId] = useState("");
   const [targetDate, setTargetDate] = useState("");
 
   // Si venimos desde Flota con "Programar service", preseleccionamos el
@@ -59,8 +61,14 @@ function MantenimientoContent() {
       .select("*")
       .order("created_at", { ascending: false });
     const { data: v } = await supabase.from("vehicles").select("*").order("name");
+    const { data: p } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("is_active", true)
+      .order("full_name");
     setRecords((m as MaintenanceRecord[]) ?? []);
     setVehicles((v as Vehicle[]) ?? []);
+    setPersonal((p as Profile[]) ?? []);
     setLoading(false);
   };
 
@@ -76,12 +84,15 @@ function MantenimientoContent() {
     if (!work.trim() || !profile) return;
     setError(null);
 
+    const responsiblePerson = personal.find((p) => p.id === responsibleId);
+
     const { error: insertError } = await supabase.from("maintenance_records").insert({
       organization_id: profile.organization_id,
       vehicle_id: vehicleId || null,
       type,
       work: work.trim(),
-      responsible: responsible.trim() || null,
+      responsible_id: responsibleId || null,
+      responsible: responsiblePerson?.full_name ?? null,
       target_date: targetDate || null,
       created_by: profile.id,
     });
@@ -90,9 +101,22 @@ function MantenimientoContent() {
       setError(insertError.message);
       return;
     }
+
+    // Aviso por Telegram a la persona asignada como responsable (si tiene
+    // el Telegram vinculado). No bloqueamos el formulario esperando esto.
+    if (responsiblePerson) {
+      notifyResponsible(
+        responsiblePerson,
+        `🔧 <b>Se te asignó una orden de mantenimiento</b>\n` +
+          `${work.trim()}${vehicleId ? " — " + vehicleName(vehicleId) : ""}\n` +
+          (targetDate ? `Fecha objetivo: ${targetDate}\n` : "") +
+          `Revisala en la app, sección Mantenimiento.`
+      );
+    }
+
     setVehicleId("");
     setWork("");
-    setResponsible("");
+    setResponsibleId("");
     setTargetDate("");
     setShowForm(false);
     load();
@@ -136,15 +160,42 @@ function MantenimientoContent() {
     load();
   };
 
-  const handleFieldUpdate = async (
-    r: MaintenanceRecord,
-    patch: Partial<Pick<MaintenanceRecord, "target_date" | "responsible">>
-  ) => {
+  const handleTargetDateUpdate = async (r: MaintenanceRecord, targetDateValue: string) => {
+    // Al cambiar la fecha objetivo reiniciamos el nivel de alerta ya avisado,
+    // para que si la orden vuelve a acercarse al vencimiento se avise de
+    // nuevo por Telegram (si no, como ya se había avisado, no volvería a
+    // avisar nunca más para esta orden).
     const { error: updateError } = await supabase
       .from("maintenance_records")
-      .update(patch)
+      .update({ target_date: targetDateValue || null, alert_notified_level: null })
       .eq("id", r.id);
     if (updateError) setError(updateError.message);
+    load();
+  };
+
+  const handleResponsibleChange = async (r: MaintenanceRecord, newResponsibleId: string) => {
+    if (newResponsibleId === (r.responsible_id ?? "")) return;
+    const responsiblePerson = personal.find((p) => p.id === newResponsibleId);
+    const { error: updateError } = await supabase
+      .from("maintenance_records")
+      .update({
+        responsible_id: newResponsibleId || null,
+        responsible: responsiblePerson?.full_name ?? null,
+      })
+      .eq("id", r.id);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    if (responsiblePerson) {
+      notifyResponsible(
+        responsiblePerson,
+        `🔧 <b>Se te asignó una orden de mantenimiento</b>\n` +
+          `${r.work}${r.vehicle_id ? " — " + vehicleName(r.vehicle_id) : ""}\n` +
+          (r.target_date ? `Fecha objetivo: ${r.target_date}\n` : "") +
+          `Revisala en la app, sección Mantenimiento.`
+      );
+    }
     load();
   };
 
@@ -250,12 +301,18 @@ function MantenimientoContent() {
             required
             className="rounded-md border border-neutral-300 px-3 py-2 sm:col-span-2"
           />
-          <input
-            value={responsible}
-            onChange={(e) => setResponsible(e.target.value)}
-            placeholder="Personal encargado (opcional)"
+          <select
+            value={responsibleId}
+            onChange={(e) => setResponsibleId(e.target.value)}
             className="rounded-md border border-neutral-300 px-3 py-2"
-          />
+          >
+            <option value="">Personal encargado (opcional)</option>
+            {personal.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.full_name}
+              </option>
+            ))}
+          </select>
           <input
             type="date"
             value={targetDate}
@@ -311,21 +368,24 @@ function MantenimientoContent() {
                     <input
                       type="date"
                       defaultValue={r.target_date ?? ""}
-                      onBlur={(e) =>
-                        handleFieldUpdate(r, { target_date: e.target.value || null })
-                      }
+                      onBlur={(e) => handleTargetDateUpdate(r, e.target.value)}
                       className="w-full rounded-md border border-neutral-300 px-2 py-1"
                     />
                   </label>
                   <label className="text-xs">
                     <span className="mb-1 block text-neutral-500">Personal encargado</span>
-                    <input
-                      defaultValue={r.responsible ?? ""}
-                      onBlur={(e) =>
-                        handleFieldUpdate(r, { responsible: e.target.value || null })
-                      }
+                    <select
+                      value={r.responsible_id ?? ""}
+                      onChange={(e) => handleResponsibleChange(r, e.target.value)}
                       className="w-full rounded-md border border-neutral-300 px-2 py-1"
-                    />
+                    >
+                      <option value="">Sin asignar</option>
+                      {personal.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.full_name}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 </div>
 
