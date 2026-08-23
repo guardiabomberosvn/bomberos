@@ -149,6 +149,18 @@ function EmergenciasContent() {
     };
   };
 
+  // Lista de nombres (no solo el conteo) para que el operador vea quién
+  // viene hacia el cuartel. Se ordena por hora de respuesta.
+  const respondersFor = (emergencyId: string) => {
+    const rs = [...responses]
+      .filter((r) => r.emergency_id === emergencyId)
+      .sort((a, b) => new Date(a.responded_at).getTime() - new Date(b.responded_at).getTime());
+    return {
+      acudo: rs.filter((r) => r.response === "acudo").map((r) => creatorNames.get(r.profile_id) ?? "—"),
+      no_acudo: rs.filter((r) => r.response === "no_acudo").map((r) => creatorNames.get(r.profile_id) ?? "—"),
+    };
+  };
+
   const handleExportHistory = () => {
     const data = emergencies.map((em) => {
       const counts = countsFor(em.id);
@@ -312,15 +324,33 @@ function EmergenciasContent() {
                 )}
 
                 {isStaff && em.needs_response && (
-                  <p className="mt-3 text-sm text-neutral-700">
-                    <span className="font-medium text-emerald-700">
-                      {counts.acudo} acuden
-                    </span>
-                    {" · "}
-                    <span className="font-medium text-neutral-600">
-                      {counts.no_acudo} no acuden
-                    </span>
-                  </p>
+                  <div className="mt-3">
+                    <p className="text-sm text-neutral-700">
+                      <span className="font-medium text-emerald-700">
+                        {counts.acudo} acuden
+                      </span>
+                      {" · "}
+                      <span className="font-medium text-neutral-600">
+                        {counts.no_acudo} no acuden
+                      </span>
+                    </p>
+                    {(counts.acudo > 0 || counts.no_acudo > 0) && (
+                      <div className="mt-2 space-y-1 rounded-md bg-white/60 px-3 py-2 text-xs">
+                        {counts.acudo > 0 && (
+                          <p className="text-emerald-700">
+                            <span className="font-semibold">✅ Acuden:</span>{" "}
+                            {respondersFor(em.id).acudo.join(", ")}
+                          </p>
+                        )}
+                        {counts.no_acudo > 0 && (
+                          <p className="text-neutral-600">
+                            <span className="font-semibold">✖ No acuden:</span>{" "}
+                            {respondersFor(em.id).no_acudo.join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
                 {isStaff && !em.needs_response && (
                   <p className="mt-3 text-xs text-neutral-400">

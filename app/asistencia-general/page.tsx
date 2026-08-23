@@ -115,6 +115,53 @@ function AsistenciaGeneralContent() {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   };
 
+  const formatHours = (minutes: number) => {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h}h ${m}m`;
+  };
+
+  // Resumen de horas/puntos ya sumados, respetando los filtros de persona y
+  // fecha elegidos arriba. Así el administrador puede buscar a un bombero y
+  // ver de una el total, en vez de tener que sumar registro por registro.
+  const summary = useMemo(() => {
+    const closed = filtered.filter((r) => r.checked_out_at);
+    let totalMinutes = 0;
+    let totalPoints = 0;
+    const byReason = new Map<string, { minutes: number; points: number; count: number }>();
+
+    closed.forEach((r) => {
+      const start = new Date(r.checked_in_at).getTime();
+      const end = new Date(r.checked_out_at as string).getTime();
+      const minutes = Math.max(0, Math.round((end - start) / 60000));
+      const points = reasons.find((rs) => rs.id === r.reason_id)?.points ?? 0;
+
+      totalMinutes += minutes;
+      totalPoints += points;
+
+      const key = r.reasonName ?? "Sin motivo";
+      const prev = byReason.get(key) ?? { minutes: 0, points: 0, count: 0 };
+      byReason.set(key, {
+        minutes: prev.minutes + minutes,
+        points: prev.points + points,
+        count: prev.count + 1,
+      });
+    });
+
+    return {
+      totalMinutes,
+      totalPoints,
+      byReason,
+      count: closed.length,
+      openCount: filtered.length - closed.length,
+    };
+  }, [filtered, reasons]);
+
+  const selectedPersonName =
+    filterPerson !== "all"
+      ? personal.find((p) => p.id === filterPerson)?.full_name
+      : null;
+
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualPersonId || !manualReasonId || !manualCheckIn) {
@@ -331,6 +378,49 @@ function AsistenciaGeneralContent() {
             className="rounded-md border border-neutral-300 px-2 py-1.5"
           />
         </label>
+      </div>
+
+      <div className="rounded-xl border border-neutral-200 bg-white p-5">
+        <p className="text-sm font-semibold text-neutral-800">
+          {selectedPersonName
+            ? `Resumen de ${selectedPersonName}`
+            : "Resumen general (todos, según filtros)"}
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <div>
+            <p className="text-xs text-neutral-500">Horas totales</p>
+            <p className="text-2xl font-bold text-neutral-900">
+              {formatHours(summary.totalMinutes)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-neutral-500">Puntos totales</p>
+            <p className="text-2xl font-bold text-brand">{summary.totalPoints}</p>
+          </div>
+          <div>
+            <p className="text-xs text-neutral-500">Registros contados</p>
+            <p className="text-2xl font-bold text-neutral-900">{summary.count}</p>
+          </div>
+        </div>
+        {summary.openCount > 0 && (
+          <p className="mt-2 text-xs text-neutral-400">
+            {summary.openCount} registro(s) todavía en curso — no se suman hasta que se marque la salida.
+          </p>
+        )}
+        {summary.byReason.size > 0 && (
+          <div className="mt-4 space-y-1 border-t border-neutral-100 pt-3">
+            {Array.from(summary.byReason.entries()).map(([name, v]) => (
+              <div key={name} className="flex justify-between text-sm text-neutral-600">
+                <span>
+                  {name} <span className="text-neutral-400">({v.count})</span>
+                </span>
+                <span>
+                  {formatHours(v.minutes)} · {v.points} pts
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
