@@ -9,6 +9,7 @@ import { ManageEmergencyTypesModal } from "@/components/ManageEmergencyTypesModa
 import { EmergencySiren } from "@/components/EmergencySiren";
 import { supabase } from "@/lib/supabase";
 import { exportToExcel } from "@/lib/export";
+import { googleMapsSearchUrl } from "@/lib/maps";
 import type {
   DispatchGroup,
   Emergency,
@@ -262,7 +263,17 @@ function EmergenciasContent() {
                   <div>
                     <p className="font-bold text-brand-dark">{em.title}</p>
                     {em.address && (
-                      <p className="text-sm text-neutral-700">{em.address}</p>
+                      <p className="text-sm text-neutral-700">
+                        {em.address}{" "}
+                        <a
+                          href={googleMapsSearchUrl(em.address)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-brand hover:underline"
+                        >
+                          🗺️ Ver en Maps ↗
+                        </a>
+                      </p>
                     )}
                     {em.notes && (
                       <p className="mt-1 text-sm text-neutral-600">{em.notes}</p>

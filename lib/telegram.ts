@@ -32,19 +32,10 @@ export async function sendTelegramMessage(
   }
 }
 
-/** Devuelve el chat_id que un usuario tiene que pegar en Telegram para vincularse (ver /vincular-telegram). */
-export function getTelegramBotUsername() {
-  return process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "";
-}
-
 /**
- * Manda el mensaje principal (con botones ACUDO/NO ACUDO si corresponde) y,
- * aparte, sin bloquear a quien está accionando la alarma, manda algunos
- * recordatorios cortos más unos segundos después — así el celular suena o
- * vibra varias veces y la alerta se nota más, en vez de un único aviso que
- * puede pasar desapercibido. Los recordatorios NO llevan botones (para no
- * duplicar los de ACUDO/NO ACUDO): son solo para llamar la atención de
- * nuevo, la respuesta se sigue dando desde el primer mensaje.
+ * Manda un mensaje de Telegram y, si se pasa pingText, además manda
+ * pingCount recordatorios cortos (sin botones) espaciados pingDelayMs ms,
+ * para que el celular suene/vibre varias veces y la alerta se note más.
  */
 export async function sendTelegramAlert(
   chatId: string,
@@ -55,7 +46,6 @@ export async function sendTelegramAlert(
   pingDelayMs = 4000
 ) {
   const result = await sendTelegramMessage(chatId, text, replyMarkup);
-
   if (pingText && pingCount > 0) {
     // A propósito sin "await" acá: los recordatorios siguen mandándose en
     // segundo plano después de que la función ya devolvió el resultado.
@@ -66,6 +56,10 @@ export async function sendTelegramAlert(
       }
     })();
   }
-
   return result;
+}
+
+/** Devuelve el chat_id que un usuario tiene que pegar en Telegram para vincularse (ver /vincular-telegram). */
+export function getTelegramBotUsername() {
+  return process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "";
 }

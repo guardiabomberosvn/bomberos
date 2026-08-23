@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { sendTelegramAlert } from "@/lib/telegram";
+import { googleMapsSearchUrl } from "@/lib/maps";
 import type { DispatchGroup, EmergencyTarget, EmergencyType, Profile } from "@/lib/types";
 
 export function DispatchModal({
@@ -112,7 +113,7 @@ export function DispatchModal({
 
       const message =
         `🚨 <b>${type.name}${type.code ? " · " + type.code : ""}</b>\n` +
-        (address.trim() ? `📍 ${address.trim()}\n` : "") +
+        (address.trim() ? `📍 ${address.trim()}\n🗺️ ${googleMapsSearchUrl(address.trim())}\n` : "") +
         (notes.trim() ? `${notes.trim()}\n` : "") +
         (needsResponse
           ? `\nRespondé desde estos botones o abrí la app.`
@@ -190,6 +191,16 @@ export function DispatchModal({
               placeholder="Dirección o referencia"
               className="w-full rounded-md border border-neutral-300 px-3 py-2 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
             />
+            {address.trim() && (
+              <a
+                href={googleMapsSearchUrl(address.trim())}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-block text-xs font-medium text-brand hover:underline"
+              >
+                🗺️ Ver &quot;{address.trim()}&quot; en Google Maps ↗
+              </a>
+            )}
           </label>
 
           <label className="block text-sm">
