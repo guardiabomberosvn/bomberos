@@ -88,21 +88,30 @@ function HallazgosContent() {
     let photoUrl: string | null = null;
 
     if (photoFile) {
-      const path = `${profile.organization_id}/${Date.now()}-${photoFile.name}`;
-      const { error: uploadError } = await supabase.storage
-        .from("maintenance-findings")
-        .upload(path, photoFile);
-
-      if (uploadError) {
-        setError("No se pudo subir la foto: " + uploadError.message);
+      // Las fotos se suben a la carpeta de Google Drive del cuartel (en vez
+      // de guardarse en el servidor), para no ocupar el espacio gratuito
+      // limitado de Supabase.
+      const uploadForm = new FormData();
+      uploadForm.append("file", photoFile);
+      try {
+        const uploadRes = await fetch("/api/upload-hallazgo-photo", {
+          method: "POST",
+          body: uploadForm,
+        });
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok) {
+          setError("No se pudo subir la foto: " + (uploadData.error ?? "Error desconocido"));
+          setSubmitting(false);
+          return;
+        }
+        photoUrl = uploadData.url;
+      } catch (e) {
+        setError(
+          "No se pudo subir la foto: " + (e instanceof Error ? e.message : "Error de red")
+        );
         setSubmitting(false);
         return;
       }
-
-      const { data: publicUrlData } = supabase.storage
-        .from("maintenance-findings")
-        .getPublicUrl(path);
-      photoUrl = publicUrlData.publicUrl;
     }
 
     const { error: insertError } = await supabase.from("maintenance_findings").insert({
@@ -263,12 +272,14 @@ function HallazgosContent() {
                     {new Date(f.created_at).toLocaleString("es-AR")}
                   </p>
                   {f.photo_url && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={f.photo_url}
-                      alt="Foto del hallazgo"
-                      className="mt-2 h-32 w-32 rounded-md object-cover"
-                    />
+                    <a
+                      href={f.photo_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1 rounded-md bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-200"
+                    >
+                      📷 Ver foto
+                    </a>
                   )}
                   <p className="mt-2 text-xs">
                     <span
