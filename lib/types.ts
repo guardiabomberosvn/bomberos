@@ -348,8 +348,7 @@ export interface Intervention {
   involved_forense: boolean;
   involved_juzgado: boolean;
   mobile_unit_number: string | null;
-  in_charge_1: string | null;
-  in_charge_2: string | null;
+  in_charge: string[];
   // 7- Negación de atención médica
   medical_refusal: boolean;
   medical_refusal_name: string | null;
@@ -369,9 +368,7 @@ export interface InterventionUnit {
   km_out: number | null;
   km_in: number | null;
   personnel_in_charge: string | null;
-  crew_member_1: string | null;
-  crew_member_2: string | null;
-  crew_member_3: string | null;
+  crew_members: string[];
 }
 
 export interface InterventionDamagedVehicle {

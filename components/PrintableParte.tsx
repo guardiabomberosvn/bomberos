@@ -254,7 +254,7 @@ export function PrintableParte({
           </div>
           <div className="pp-row">
             <Field label="N° de móvil" value={i.mobile_unit_number} />
-            <Field label="A cargo" value={[i.in_charge_1, i.in_charge_2].filter(Boolean).join(" · ")} className="pp-grow" />
+            <Field label="A cargo" value={(i.in_charge ?? []).join(" · ")} className="pp-grow" />
           </div>
           {units.length === 0 ? (
             <p className="pp-empty">Sin unidades asignadas.</p>
@@ -267,7 +267,7 @@ export function PrintableParte({
                 <Field label="Personal a cargo" value={u.personnel_in_charge || personName(u.driver_id)} className="pp-grow" />
                 <Field
                   label="Personal que concurrió"
-                  value={[u.crew_member_1, u.crew_member_2, u.crew_member_3].filter(Boolean).join(" · ")}
+                  value={(u.crew_members ?? []).join(" · ")}
                   className="pp-grow"
                 />
               </div>

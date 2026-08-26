@@ -6,6 +6,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { StatsBarChart } from "@/components/StatsBarChart";
 import { PrintableParte } from "@/components/PrintableParte";
+import { NameListEditor } from "@/components/NameListEditor";
 import { supabase } from "@/lib/supabase";
 import { exportToExcel } from "@/lib/export";
 import type {
@@ -97,8 +98,7 @@ function IntervencionesContent() {
   const [involvedForense, setInvolvedForense] = useState(false);
   const [involvedJuzgado, setInvolvedJuzgado] = useState(false);
   const [mobileUnitNumber, setMobileUnitNumber] = useState("");
-  const [inCharge1, setInCharge1] = useState("");
-  const [inCharge2, setInCharge2] = useState("");
+  const [inCharge, setInCharge] = useState<string[]>([]);
   // 7- Negación de atención médica
   const [medicalRefusal, setMedicalRefusal] = useState(false);
   const [medicalRefusalName, setMedicalRefusalName] = useState("");
@@ -108,18 +108,14 @@ function IntervencionesContent() {
   const [unitVehicleId, setUnitVehicleId] = useState("");
   const [unitDriverId, setUnitDriverId] = useState("");
   const [unitPersonnelInCharge, setUnitPersonnelInCharge] = useState("");
-  const [unitCrew1, setUnitCrew1] = useState("");
-  const [unitCrew2, setUnitCrew2] = useState("");
-  const [unitCrew3, setUnitCrew3] = useState("");
+  const [unitCrew, setUnitCrew] = useState<string[]>([]);
 
   const [editingUnit, setEditingUnit] = useState<InterventionUnit | null>(null);
   const [editKmOut, setEditKmOut] = useState("");
   const [editKmIn, setEditKmIn] = useState("");
   const [editReturnedAt, setEditReturnedAt] = useState("");
   const [editPersonnelInCharge, setEditPersonnelInCharge] = useState("");
-  const [editCrew1, setEditCrew1] = useState("");
-  const [editCrew2, setEditCrew2] = useState("");
-  const [editCrew3, setEditCrew3] = useState("");
+  const [editCrew, setEditCrew] = useState<string[]>([]);
 
   const [addingVehicleTo, setAddingVehicleTo] = useState<string | null>(null);
   const [vehicleForm, setVehicleForm] = useState<Partial<InterventionDamagedVehicle>>(emptyVehicleForm);
@@ -249,8 +245,7 @@ function IntervencionesContent() {
       involved_forense: involvedForense,
       involved_juzgado: involvedJuzgado,
       mobile_unit_number: mobileUnitNumber.trim() || null,
-      in_charge_1: inCharge1.trim() || null,
-      in_charge_2: inCharge2.trim() || null,
+      in_charge: inCharge,
       medical_refusal: medicalRefusal,
       medical_refusal_name: medicalRefusal ? medicalRefusalName.trim() || null : null,
       medical_refusal_dni: medicalRefusal ? medicalRefusalDni.trim() || null : null,
@@ -292,8 +287,7 @@ function IntervencionesContent() {
     setInvolvedForense(false);
     setInvolvedJuzgado(false);
     setMobileUnitNumber("");
-    setInCharge1("");
-    setInCharge2("");
+    setInCharge([]);
     setMedicalRefusal(false);
     setMedicalRefusalName("");
     setMedicalRefusalDni("");
@@ -309,17 +303,13 @@ function IntervencionesContent() {
       driver_id: unitDriverId || null,
       departed_at: new Date().toISOString(),
       personnel_in_charge: unitPersonnelInCharge.trim() || null,
-      crew_member_1: unitCrew1.trim() || null,
-      crew_member_2: unitCrew2.trim() || null,
-      crew_member_3: unitCrew3.trim() || null,
+      crew_members: unitCrew,
     });
     if (insertError) setError(insertError.message);
     setUnitVehicleId("");
     setUnitDriverId("");
     setUnitPersonnelInCharge("");
-    setUnitCrew1("");
-    setUnitCrew2("");
-    setUnitCrew3("");
+    setUnitCrew([]);
     setAddingUnitTo(null);
     load();
   };
@@ -337,9 +327,7 @@ function IntervencionesContent() {
       setEditReturnedAt("");
     }
     setEditPersonnelInCharge(u.personnel_in_charge ?? "");
-    setEditCrew1(u.crew_member_1 ?? "");
-    setEditCrew2(u.crew_member_2 ?? "");
-    setEditCrew3(u.crew_member_3 ?? "");
+    setEditCrew(u.crew_members ?? []);
     setEditingUnit(u);
   };
 
@@ -352,9 +340,7 @@ function IntervencionesContent() {
         km_in: editKmIn ? Number(editKmIn) : null,
         returned_at: editReturnedAt ? new Date(editReturnedAt).toISOString() : null,
         personnel_in_charge: editPersonnelInCharge.trim() || null,
-        crew_member_1: editCrew1.trim() || null,
-        crew_member_2: editCrew2.trim() || null,
-        crew_member_3: editCrew3.trim() || null,
+        crew_members: editCrew,
       })
       .eq("id", editingUnit.id);
     if (updateError) setError(updateError.message);
@@ -937,19 +923,9 @@ function IntervencionesContent() {
             placeholder="N° de móvil (policial/tránsito)"
             className="rounded-md border border-neutral-300 px-3 py-2"
           />
-          <div className="flex gap-2">
-            <input
-              value={inCharge1}
-              onChange={(e) => setInCharge1(e.target.value)}
-              placeholder="A cargo"
-              className="w-1/2 rounded-md border border-neutral-300 px-3 py-2"
-            />
-            <input
-              value={inCharge2}
-              onChange={(e) => setInCharge2(e.target.value)}
-              placeholder="A cargo (2°)"
-              className="w-1/2 rounded-md border border-neutral-300 px-3 py-2"
-            />
+          <div className="sm:col-span-2">
+            <span className="mb-1 block text-sm text-neutral-500">A cargo</span>
+            <NameListEditor values={inCharge} onChange={setInCharge} placeholder="Nombre a cargo" />
           </div>
 
           <p className="text-xs font-semibold uppercase text-neutral-500 sm:col-span-2">
@@ -1137,7 +1113,7 @@ function IntervencionesContent() {
                               u.km_out != null && u.km_in != null
                                 ? Math.max(0, u.km_in - u.km_out)
                                 : null;
-                            const crew = [u.crew_member_1, u.crew_member_2, u.crew_member_3].filter(Boolean);
+                            const crew = u.crew_members ?? [];
                             return (
                               <li key={u.id} className="flex items-center justify-between py-1.5">
                                 <div>
@@ -1205,24 +1181,10 @@ function IntervencionesContent() {
                             placeholder="Personal a cargo"
                             className="rounded-md border border-neutral-300 px-2 py-1 text-sm sm:col-span-2"
                           />
-                          <input
-                            value={unitCrew1}
-                            onChange={(e) => setUnitCrew1(e.target.value)}
-                            placeholder="Personal que concurrió (1)"
-                            className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
-                          />
-                          <input
-                            value={unitCrew2}
-                            onChange={(e) => setUnitCrew2(e.target.value)}
-                            placeholder="Personal que concurrió (2)"
-                            className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
-                          />
-                          <input
-                            value={unitCrew3}
-                            onChange={(e) => setUnitCrew3(e.target.value)}
-                            placeholder="Personal que concurrió (3)"
-                            className="rounded-md border border-neutral-300 px-2 py-1 text-sm sm:col-span-2"
-                          />
+                          <div className="sm:col-span-2">
+                            <span className="mb-1 block text-xs text-neutral-500">Personal que concurrió</span>
+                            <NameListEditor values={unitCrew} onChange={setUnitCrew} placeholder="Nombre del bombero" />
+                          </div>
                           <button
                             onClick={() => handleAddUnit(i.id)}
                             className="rounded-md bg-brand px-3 py-1 text-sm font-medium text-white hover:bg-brand-dark sm:col-span-2"
@@ -1551,26 +1513,10 @@ function IntervencionesContent() {
                   className="w-full rounded-md border border-neutral-300 px-3 py-2"
                 />
               </label>
-              <label className="block text-sm">
+              <div className="text-sm">
                 <span className="mb-1 block font-medium text-neutral-700">Personal que concurrió</span>
-                <div className="space-y-2">
-                  <input
-                    value={editCrew1}
-                    onChange={(e) => setEditCrew1(e.target.value)}
-                    className="w-full rounded-md border border-neutral-300 px-3 py-2"
-                  />
-                  <input
-                    value={editCrew2}
-                    onChange={(e) => setEditCrew2(e.target.value)}
-                    className="w-full rounded-md border border-neutral-300 px-3 py-2"
-                  />
-                  <input
-                    value={editCrew3}
-                    onChange={(e) => setEditCrew3(e.target.value)}
-                    className="w-full rounded-md border border-neutral-300 px-3 py-2"
-                  />
-                </div>
-              </label>
+                <NameListEditor values={editCrew} onChange={setEditCrew} placeholder="Nombre del bombero" />
+              </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">
               <button
