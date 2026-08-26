@@ -312,12 +312,51 @@ export interface Intervention {
   created_by: string;
   created_at: string;
   parte_number: number | null;
+  parte_year: number | null;
   caller_phone: string | null;
   address: string | null;
   barrio: string | null;
   incident_category: IncidentCategory | null;
   fuel_notes: string | null;
   shift_id: string | null;
+  // 1- Aviso efectuado por
+  reporter_name: string | null;
+  reporter_dni: string | null;
+  // 2- Lugar del siniestro
+  cross_street: string | null;
+  // 3- Tipo / Motivo / guardia / horarios generales
+  tipo_code: string | null;
+  motivo_code: string | null;
+  reference_code: string | null;
+  guard_departure: string | null;
+  guard_return: string | null;
+  departed_at: string | null;
+  returned_at: string | null;
+  // Clasificación del siniestro
+  incident_subtype: string | null;
+  incident_subtype_detail: string | null;
+  // Apoyo solicitado
+  support_requested: boolean;
+  support_unit_number: string | null;
+  // 6- INCENDIO: datos sobre lo dañado
+  damage_victim_name: string | null;
+  damage_victim_age: string | null;
+  damage_victim_dni: string | null;
+  damage_type: string | null;
+  involved_policial: boolean;
+  involved_transito: boolean;
+  involved_forense: boolean;
+  involved_juzgado: boolean;
+  mobile_unit_number: string | null;
+  in_charge_1: string | null;
+  in_charge_2: string | null;
+  // 7- Negación de atención médica
+  medical_refusal: boolean;
+  medical_refusal_name: string | null;
+  medical_refusal_dni: string | null;
+  // 10- Revisó
+  reviewed_by: string | null;
+  reviewed_at: string | null;
 }
 
 export interface InterventionUnit {
@@ -329,7 +368,83 @@ export interface InterventionUnit {
   returned_at: string | null;
   km_out: number | null;
   km_in: number | null;
+  personnel_in_charge: string | null;
+  crew_member_1: string | null;
+  crew_member_2: string | null;
+  crew_member_3: string | null;
 }
+
+export interface InterventionDamagedVehicle {
+  id: string;
+  intervention_id: string;
+  vehicle_number: number | null;
+  brand: string | null;
+  model: string | null;
+  plate: string | null;
+  insurance: string | null;
+  policy_number: string | null;
+  created_at: string;
+}
+
+export type VictimRole = "propietario" | "conductor" | "acompanante" | "peaton";
+export type TriageColor = "rojo" | "amarillo" | "verde" | "negro" | "blanco_sin_talon";
+
+export interface InterventionVictim {
+  id: string;
+  intervention_id: string;
+  vehicle_number: number | null;
+  role: VictimRole | null;
+  full_name: string | null;
+  age: string | null;
+  dni: string | null;
+  address: string | null;
+  address_number: string | null;
+  locality: string | null;
+  province: string | null;
+  phone: string | null;
+  injured: boolean;
+  triage_color: TriageColor | null;
+  transferred: boolean;
+  transferred_by: string | null;
+  transferred_to: string | null;
+  receiving_doctor: string | null;
+  created_at: string;
+}
+
+// Subtipos de siniestro según la categoría elegida (checkboxes del papel).
+export const INCIDENT_SUBTYPES: Record<string, string[]> = {
+  Incendio: ["Vivienda", "Vehículo", "Campos", "Otros"],
+  Accidente: ["Automóvil", "Colectivo", "Animal", "Otro"],
+  Rescate: ["Persona", "Animal"],
+};
+export const RESCUE_PERSON_STATUS = ["Libre", "Atrapado", "Ahogado"];
+export const RESCUE_ANIMAL_STATUS = ["Vivo", "Muerto"];
+
+export const DAMAGE_TYPES = [
+  "Rodado",
+  "Casa",
+  "Galpón",
+  "Fábrica",
+  "Industria",
+  "Campo",
+  "Pastizales",
+  "Baldío",
+];
+
+export const VICTIM_ROLES: { value: VictimRole; label: string }[] = [
+  { value: "propietario", label: "Propietario" },
+  { value: "conductor", label: "Conductor" },
+  { value: "acompanante", label: "Acompañante" },
+  { value: "peaton", label: "Peatón" },
+];
+
+export const TRIAGE_COLORS: { value: TriageColor; label: string }[] = [
+  { value: "rojo", label: "Rojo" },
+  { value: "amarillo", label: "Amarillo" },
+  { value: "verde", label: "Verde" },
+  { value: "negro", label: "Negro" },
+  { value: "blanco_sin_talon", label: "Blanco o sin talón" },
+];
 
 export type FindingPriority = "baja" | "media" | "alta" | "critica";
 export type FindingStatus = "pendiente" | "convertido" | "descartado";

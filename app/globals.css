@@ -26,3 +26,186 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* ===========================================================
+   Parte de siniestro para imprimir / guardar como PDF.
+   El bloque #printable-parte vive siempre en el DOM (lo arma
+   PrintableParte.tsx) pero se mantiene oculto en pantalla; solo se
+   muestra al imprimir, y ahí se oculta el resto de la app.
+   =========================================================== */
+#printable-parte {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-parte,
+  #printable-parte * {
+    visibility: visible;
+  }
+  #printable-parte {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+  }
+}
+
+.pp-page {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 11px;
+  color: #111;
+  padding: 16px;
+}
+
+.pp-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 2px solid #111;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+.pp-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.pp-header-text h1 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 2px;
+}
+.pp-header-text p {
+  margin: 0;
+  font-size: 9px;
+  line-height: 1.3;
+}
+
+.pp-parte-title {
+  font-size: 12px;
+  margin: 6px 0;
+}
+
+.pp-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 3px 0;
+  align-items: baseline;
+}
+.pp-field {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  white-space: nowrap;
+}
+.pp-grow {
+  flex: 1 1 auto;
+  min-width: 120px;
+}
+.pp-narrow {
+  min-width: 24px;
+}
+.pp-field-label {
+  font-weight: 700;
+}
+.pp-field-value {
+  border-bottom: 1px dotted #999;
+  min-width: 40px;
+  padding: 0 2px;
+}
+
+.pp-box {
+  border: 1px solid #111;
+  padding: 6px 8px;
+  margin: 8px 0;
+}
+.pp-classify-cols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 18px;
+}
+.pp-classify-col {
+  min-width: 140px;
+}
+.pp-classify-head {
+  font-weight: 700;
+  margin: 2px 0;
+}
+.pp-classify-item {
+  margin: 1px 0 1px 10px;
+}
+.pp-inline-check {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  margin-right: 12px;
+  white-space: nowrap;
+}
+.pp-check {
+  font-size: 12px;
+}
+.pp-hint {
+  font-style: italic;
+  color: #555;
+}
+
+.pp-section-title {
+  font-weight: 700;
+  margin: 10px 0 4px;
+  border-bottom: 1px solid #111;
+  padding-bottom: 2px;
+}
+
+.pp-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 8px;
+}
+.pp-table th,
+.pp-table td {
+  border: 1px solid #111;
+  padding: 3px 5px;
+  text-align: left;
+  font-size: 10px;
+}
+
+.pp-victim {
+  border: 1px solid #999;
+  padding: 6px;
+  margin-bottom: 6px;
+}
+
+.pp-empty {
+  font-style: italic;
+  color: #555;
+  margin: 2px 0 8px;
+}
+
+.pp-legal-text {
+  margin: 4px 0;
+  line-height: 1.4;
+}
+
+.pp-signature-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 10px 0;
+}
+
+.pp-observaciones {
+  min-height: 60px;
+  white-space: pre-wrap;
+  border-bottom: 1px dotted #999;
+}
+
+.pp-footer {
+  margin-top: 24px;
+  border-top: 1px solid #111;
+  padding-top: 8px;
+}
