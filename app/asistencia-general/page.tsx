@@ -157,6 +157,56 @@ function AsistenciaGeneralContent() {
     };
   }, [filtered, reasons]);
 
+  // Puntaje por persona: uno por uno, no el total de todos juntos. Respeta
+  // el rango de fechas elegido arriba, pero no el filtro de "Persona" (para
+  // eso ya está el resumen de arriba) — acá se ve a todo el personal junto,
+  // ordenado por puntaje.
+  const perPersonSummary = useMemo(() => {
+    const inRange = rows.filter((r) => {
+      if (!r.checked_out_at) return false;
+      const checkedIn = new Date(r.checked_in_at);
+      if (filterFrom && checkedIn < new Date(filterFrom)) return false;
+      if (filterTo) {
+        const to = new Date(filterTo);
+        to.setHours(23, 59, 59, 999);
+        if (checkedIn > to) return false;
+      }
+      return true;
+    });
+
+    const byPerson = new Map<
+      string,
+      { id: string; name: string; minutes: number; points: number; count: number }
+    >();
+    personal.forEach((p) => {
+      byPerson.set(p.id, { id: p.id, name: p.full_name, minutes: 0, points: 0, count: 0 });
+    });
+
+    inRange.forEach((r) => {
+      const start = new Date(r.checked_in_at).getTime();
+      const end = new Date(r.checked_out_at as string).getTime();
+      const minutes = Math.max(0, Math.round((end - start) / 60000));
+      const points = reasons.find((rs) => rs.id === r.reason_id)?.points ?? 0;
+      const key = r.firefighter_id;
+      const prev = byPerson.get(key) ?? {
+        id: key,
+        name: r.profile?.full_name ?? "—",
+        minutes: 0,
+        points: 0,
+        count: 0,
+      };
+      byPerson.set(key, {
+        id: prev.id,
+        name: prev.name,
+        minutes: prev.minutes + minutes,
+        points: prev.points + points,
+        count: prev.count + 1,
+      });
+    });
+
+    return Array.from(byPerson.values()).sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
+  }, [rows, personal, reasons, filterFrom, filterTo]);
+
   const selectedPersonName =
     filterPerson !== "all"
       ? personal.find((p) => p.id === filterPerson)?.full_name
@@ -421,6 +471,45 @@ function AsistenciaGeneralContent() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+        <div className="border-b border-neutral-200 px-4 py-3">
+          <h2 className="font-semibold text-neutral-800">Puntaje por persona</h2>
+          <p className="text-xs text-neutral-500">
+            {filterFrom || filterTo
+              ? "Según el rango de fechas elegido arriba."
+              : "Histórico completo (elegí una fecha \"Desde\"/\"Hasta\" arriba para acotarlo)."}
+          </p>
+        </div>
+        <table className="min-w-full divide-y divide-neutral-200 text-sm">
+          <thead className="bg-neutral-50 text-left text-neutral-500">
+            <tr>
+              <th className="px-4 py-3 font-medium">Persona</th>
+              <th className="px-4 py-3 font-medium">Horas</th>
+              <th className="px-4 py-3 font-medium">Puntos</th>
+              <th className="px-4 py-3 font-medium">Registros</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-100">
+            {perPersonSummary.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-6 text-center text-neutral-500">
+                  No hay personal cargado.
+                </td>
+              </tr>
+            ) : (
+              perPersonSummary.map((p) => (
+                <tr key={p.id}>
+                  <td className="px-4 py-3 font-medium text-neutral-800">{p.name}</td>
+                  <td className="px-4 py-3 text-neutral-600">{formatHours(p.minutes)}</td>
+                  <td className="px-4 py-3 font-semibold text-brand">{p.points}</td>
+                  <td className="px-4 py-3 text-neutral-500">{p.count}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
