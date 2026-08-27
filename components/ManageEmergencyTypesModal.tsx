@@ -37,7 +37,8 @@ export function ManageEmergencyTypesModal({
   const [expandedTypeId, setExpandedTypeId] = useState<string | null>(null);
   const [motives, setMotives] = useState<EmergencyTypeMotive[]>([]);
   const [loadingMotives, setLoadingMotives] = useState(false);
-  const [motiveName, setMotiveName] = useState("");
+  // Los motivos son solo un código (ej: "010") — no hace falta ponerle un
+  // nombre aparte, así al bombero le llega únicamente el código.
   const [motiveCode, setMotiveCode] = useState("");
 
   const loadMotives = async (typeId: string) => {
@@ -56,25 +57,25 @@ export function ManageEmergencyTypesModal({
   }, [expandedTypeId]);
 
   const toggleExpanded = (typeId: string) => {
-    setMotiveName("");
     setMotiveCode("");
     setExpandedTypeId((current) => (current === typeId ? null : typeId));
   };
 
   const handleAddMotive = async (e: React.FormEvent, typeId: string) => {
     e.preventDefault();
-    if (!motiveName.trim()) return;
+    if (!motiveCode.trim()) return;
+    // name queda igual al código: la tabla lo pide (not null), pero en la
+    // práctica el motivo se identifica solo por el código.
     const { error: insertError } = await supabase.from("emergency_type_motives").insert({
       emergency_type_id: typeId,
-      name: motiveName.trim(),
-      code: motiveCode.trim() || null,
+      name: motiveCode.trim(),
+      code: motiveCode.trim(),
       sort_order: motives.length,
     });
     if (insertError) {
       setError(insertError.message);
       return;
     }
-    setMotiveName("");
     setMotiveCode("");
     loadMotives(typeId);
   };
@@ -89,7 +90,7 @@ export function ManageEmergencyTypesModal({
   };
 
   const handleDeleteMotive = async (motive: EmergencyTypeMotive) => {
-    if (!window.confirm(`¿Eliminar el motivo "${motive.name}"?`)) return;
+    if (!window.confirm(`¿Eliminar el motivo "${motive.code ?? motive.name}"?`)) return;
     const { error: deleteError } = await supabase
       .from("emergency_type_motives")
       .delete()
@@ -271,8 +272,8 @@ export function ManageEmergencyTypesModal({
                 {expandedTypeId === t.id && (
                   <div className="mt-3 space-y-2 border-t border-neutral-100 pt-3">
                     <p className="text-xs text-neutral-500">
-                      Botones de &quot;¿de qué es?&quot; para {t.name} — se pueden agregar los que
-                      hagan falta (ej: Casa, Auto, Campo…).
+                      Códigos de &quot;¿de qué es?&quot; para {t.name} — se pueden agregar los que
+                      hagan falta (ej: 010, 020, 030…). Al bombero le llega solo el código.
                     </p>
                     {loadingMotives ? (
                       <p className="text-xs text-neutral-400">Cargando…</p>
@@ -283,8 +284,7 @@ export function ManageEmergencyTypesModal({
                         {motives.map((m) => (
                           <li key={m.id} className="flex items-center justify-between py-1.5 text-sm">
                             <span className={m.is_active ? "" : "text-neutral-400 line-through"}>
-                              {m.name}
-                              {m.code ? ` (${m.code})` : ""}
+                              {m.code ?? m.name}
                             </span>
                             <div className="flex gap-2">
                               <button
@@ -309,17 +309,11 @@ export function ManageEmergencyTypesModal({
                       className="flex flex-wrap gap-2 pt-1"
                     >
                       <input
-                        value={motiveName}
-                        onChange={(e) => setMotiveName(e.target.value)}
-                        placeholder="Nombre, ej: Casa"
-                        required
-                        className="flex-1 rounded-md border border-neutral-300 px-2 py-1 text-sm"
-                      />
-                      <input
                         value={motiveCode}
                         onChange={(e) => setMotiveCode(e.target.value)}
-                        placeholder="Código, ej: 101"
-                        className="w-24 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                        placeholder="Código, ej: 010"
+                        required
+                        className="flex-1 rounded-md border border-neutral-300 px-2 py-1 text-sm"
                       />
                       <button
                         type="submit"

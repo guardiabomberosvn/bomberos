@@ -64,7 +64,9 @@ export function DispatchModal({
 
     setSubmitting(true);
 
-    const displayName = selectedMotive ? `${type.name} - ${selectedMotive.name}` : type.name;
+    // El motivo aporta solo el código (ej: "010"), no un nombre — al
+    // bombero le llega "Incendio · 01-010", no "Incendio - Casa · 01-010".
+    const displayName = type.name;
     const fullCode = [type.code, selectedMotive?.code].filter(Boolean).join("-");
 
     const { data: created, error: insertError } = await supabase
@@ -213,7 +215,7 @@ export function DispatchModal({
                       : "border border-neutral-300 text-neutral-700"
                   }`}
                 >
-                  {m.name}
+                  {m.code ?? m.name}
                 </button>
               ))}
             </div>
