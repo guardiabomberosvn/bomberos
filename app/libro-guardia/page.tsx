@@ -7,7 +7,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { exportToExcel } from "@/lib/export";
 import { StatsBarChart } from "@/components/StatsBarChart";
-import { IntervencionesContent } from "@/app/intervenciones/page";
+import { IntervencionesContent } from "@/components/IntervencionesContent";
 import type {
   AgendaEvent,
   GuardCall,
