@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
@@ -125,6 +125,10 @@ function IntervencionesContent() {
 
   const [printTarget, setPrintTarget] = useState<string | null>(null);
 
+  // Referencia al formulario de "Nueva intervención": al abrirlo, la
+  // pantalla baja sola hasta acá en vez de dejarlo fuera de vista arriba.
+  const formRef = useRef<HTMLFormElement | null>(null);
+
   const load = async () => {
     setLoading(true);
     const { data: i } = await supabase
@@ -176,6 +180,16 @@ function IntervencionesContent() {
     setIncidentSubtypeDetail("");
   }, [incidentCategory]);
 
+  // Al abrir "Nueva intervención", baja la pantalla sola hasta el
+  // formulario para que quede a la vista de una.
+  useEffect(() => {
+    if (!showForm) return;
+    const t = setTimeout(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [showForm]);
+
   // Imprimir / descargar PDF: cuando se elige un parte, se renderiza su
   // versión imprimible (oculta en pantalla) y se dispara el diálogo de
   // impresión del navegador, donde se puede elegir "Guardar como PDF".
@@ -196,7 +210,18 @@ function IntervencionesContent() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !profile) return;
+    if (!profile) {
+      setError("No se pudo identificar tu usuario. Recargá la página e iniciá sesión de nuevo.");
+      return;
+    }
+    // Antes esto cortaba en silencio si faltaba el Título (primer campo del
+    // formulario) — parecía que el botón "Guardar" no hacía nada. Ahora se
+    // avisa y se sube hasta el campo para que se vea.
+    if (!title.trim()) {
+      setError("Falta completar el Título del parte (primer campo del formulario, arriba de todo).");
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
     setError(null);
 
     // Si hay un turno abierto, el parte queda asociado a ese turno.
@@ -215,7 +240,9 @@ function IntervencionesContent() {
       incident_category: incidentCategory || null,
       caller_phone: callerPhone.trim() || null,
       address: address.trim() || null,
-      barrio: barrio || null,
+      // Se guarda en mayúsculas para que "Villa Maria" y "VILLA MARIA" no
+      // se cuenten como barrios distintos en las estadísticas.
+      barrio: barrio.trim() ? barrio.trim().toUpperCase() : null,
       personnel_in_charge: personnelInCharge.trim() || null,
       operator_id: operatorId || null,
       fuel_notes: fuelNotes.trim() || null,
@@ -604,6 +631,7 @@ function IntervencionesContent() {
 
       {showForm && (
         <form
+          ref={formRef}
           onSubmit={handleCreate}
           className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2"
         >
