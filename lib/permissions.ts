@@ -55,7 +55,12 @@ export function hasSectionAccess(
   profile: Pick<Profile, "role" | "allowed_sections">,
   key: SectionKey
 ): boolean {
-  if (profile.role === "admin") return true;
+  // OJO: acá NO hay bypass automático para role === "admin". El
+  // administrador de la cuenta puede personalizar los accesos de
+  // cualquier persona, incluida otra marcada como "Administrador" — así
+  // se puede armar el acceso de cada uno a mano, parte por parte. Mientras
+  // nadie la personalice, una persona admin sigue viendo todo (ver
+  // legacyRoles más abajo), que es el comportamiento de siempre.
   if (profile.allowed_sections) return profile.allowed_sections.includes(key);
   const def = SECTIONS.find((s) => s.key === key);
   return def ? def.legacyRoles.includes(profile.role) : false;

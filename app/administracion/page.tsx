@@ -90,9 +90,9 @@ function AdministracionContent() {
       <div>
         <h1 className="text-2xl font-bold text-neutral-900">Administración</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          Elegí, persona por persona, a qué secciones del sistema puede entrar. Un
-          Administrador siempre tiene acceso a todo. Mientras no se personalice a
-          alguien, sigue viendo lo de siempre según su rol (Guardia / Bombero).
+          Elegí, persona por persona, a qué secciones del sistema puede entrar —
+          incluidas las que hoy figuran como Administrador. Mientras no
+          personalices a alguien, sigue viendo lo de siempre según su rol.
         </p>
       </div>
 
@@ -107,7 +107,7 @@ function AdministracionContent() {
           {personal.map((person) => {
             const isAdmin = person.role === "admin";
             const isEditing = editingId === person.id;
-            const isCustomized = !isAdmin && person.allowed_sections != null;
+            const isCustomized = person.allowed_sections != null;
             const isMe = person.id === myProfile?.id;
 
             return (
@@ -121,34 +121,32 @@ function AdministracionContent() {
                     <p className="text-xs text-neutral-500">
                       {ROLE_LABELS[person.role]}
                       {!person.is_active ? " · Inactivo" : ""}
-                      {isAdmin
-                        ? " · Acceso total a todo el sistema"
-                        : isCustomized
+                      {isCustomized
                         ? " · Accesos personalizados"
+                        : isAdmin
+                        ? " · Acceso total a todo el sistema (por defecto de su rol)"
                         : " · Accesos por defecto de su rol"}
                     </p>
                   </div>
-                  {!isAdmin && (
-                    <div className="flex gap-2">
-                      {isCustomized && (
-                        <button
-                          onClick={() => resetToRoleDefault(person)}
-                          className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
-                        >
-                          Restablecer al rol
-                        </button>
-                      )}
+                  <div className="flex gap-2">
+                    {isCustomized && (
                       <button
-                        onClick={() => (isEditing ? setEditingId(null) : startEditing(person))}
-                        className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-dark"
+                        onClick={() => resetToRoleDefault(person)}
+                        className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
                       >
-                        {isEditing ? "Cerrar" : "Personalizar accesos"}
+                        Restablecer al rol
                       </button>
-                    </div>
-                  )}
+                    )}
+                    <button
+                      onClick={() => (isEditing ? setEditingId(null) : startEditing(person))}
+                      className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-dark"
+                    >
+                      {isEditing ? "Cerrar" : "Personalizar accesos"}
+                    </button>
+                  </div>
                 </div>
 
-                {isEditing && !isAdmin && (
+                {isEditing && (
                   <div className="space-y-4 border-t border-neutral-100 px-4 py-4">
                     <div>
                       <p className="mb-2 text-xs font-semibold uppercase text-neutral-500">
