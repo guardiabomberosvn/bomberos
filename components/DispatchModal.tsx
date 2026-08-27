@@ -120,7 +120,13 @@ export function DispatchModal({
     try {
       let recipientIds: string[] = [];
       if (target === "todos") {
-        recipientIds = personal.map((p) => p.id);
+        // "Todo el cuerpo" no manda a quien está marcado "No disponible"
+        // (los inactivos ya ni figuran en "personal", eso viene filtrado
+        // desde antes). Si elegís gente puntual o un grupo, ahí sí se
+        // respeta lo que elegiste, esté disponible o no.
+        recipientIds = personal
+          .filter((p) => p.availability === "disponible")
+          .map((p) => p.id);
       } else if (target === "individual") {
         recipientIds = Array.from(selectedPersonIds);
       } else if (target === "grupos") {
