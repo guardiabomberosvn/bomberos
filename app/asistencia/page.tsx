@@ -263,20 +263,14 @@ function AsistenciaContent() {
         <p className="text-sm font-semibold text-neutral-800">
           Resumen de este mes
         </p>
-        <div className="mt-3 grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-xs text-neutral-500">Horas totales</p>
-            <p className="text-2xl font-bold text-neutral-900">
-              {formatHours(monthlySummary.totalMinutes)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-neutral-500">Puntos totales</p>
-            <p className="text-2xl font-bold text-brand">
-              {monthlySummary.totalPoints}
-            </p>
-          </div>
+        <div className="mt-3">
+          <p className="text-xs text-neutral-500">Horas totales</p>
+          <p className="text-2xl font-bold text-neutral-900">
+            {formatHours(monthlySummary.totalMinutes)}
+          </p>
         </div>
+        {/* El puntaje de cada motivo solo se muestra en "Asistencia (todos)",
+            no acá en la asistencia personal. */}
         {monthlySummary.byReason.size > 0 && (
           <div className="mt-4 space-y-1 border-t border-neutral-100 pt-3">
             {Array.from(monthlySummary.byReason.entries()).map(([name, v]) => (
@@ -284,9 +278,7 @@ function AsistenciaContent() {
                 <span>
                   {name} <span className="text-neutral-400">({v.count})</span>
                 </span>
-                <span>
-                  {formatHours(v.minutes)} · {v.points} pts
-                </span>
+                <span>{formatHours(v.minutes)}</span>
               </div>
             ))}
           </div>
