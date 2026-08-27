@@ -4,12 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import type { AttendanceReason } from "@/lib/types";
 
 type ScanState = "idle" | "scanning" | "processing" | "success" | "error";
 
 function EscanearContent() {
+  const { profile } = useAuth();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -20,6 +22,23 @@ function EscanearContent() {
   const [message, setMessage] = useState<string>("");
   const [reasons, setReasons] = useState<AttendanceReason[]>([]);
   const [selectedReasonId, setSelectedReasonId] = useState<string>("");
+  // Si ya tenés un ingreso abierto, este escaneo va a ser tu salida: no
+  // corresponde elegir motivo (eso es solo para el ingreso). null = todavía
+  // no se sabe (cargando).
+  const [hasOpenRecord, setHasOpenRecord] = useState<boolean | null>(null);
+
+  const checkStatus = useCallback(async () => {
+    if (!profile) return;
+    setHasOpenRecord(null);
+    const { data } = await supabase
+      .from("attendance")
+      .select("id")
+      .eq("firefighter_id", profile.id)
+      .is("checked_out_at", null)
+      .maybeSingle();
+    setHasOpenRecord(!!data);
+    setSelectedReasonId("");
+  }, [profile]);
 
   useEffect(() => {
     supabase
@@ -29,6 +48,10 @@ function EscanearContent() {
       .order("sort_order")
       .then(({ data }) => setReasons((data as AttendanceReason[]) ?? []));
   }, []);
+
+  useEffect(() => {
+    checkStatus();
+  }, [checkStatus]);
 
   const stopCamera = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -42,9 +65,12 @@ function EscanearContent() {
       scanningLockRef.current = true;
       setState("processing");
 
+      // El motivo solo se manda si este escaneo es un ingreso (no hay
+      // registro abierto); en una salida se ignora aunque quedara algo
+      // seleccionado, así nunca se cuenta un motivo de más.
       const { data, error } = await supabase.rpc("checkin_with_qr", {
         qr_token: token,
-        p_reason_id: selectedReasonId || null,
+        p_reason_id: hasOpenRecord ? null : selectedReasonId || null,
       });
 
       if (error) {
@@ -63,7 +89,7 @@ function EscanearContent() {
       setMessage(`${action} registrado correctamente.`);
       stopCamera();
     },
-    [stopCamera, selectedReasonId]
+    [stopCamera, selectedReasonId, hasOpenRecord]
   );
 
   const scanLoop = useCallback(() => {
@@ -117,6 +143,8 @@ function EscanearContent() {
     return () => stopCamera();
   }, [stopCamera]);
 
+  const canActivateCamera = hasOpenRecord === false ? !!selectedReasonId : hasOpenRecord === true;
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-neutral-900">Escanear QR</h1>
@@ -128,29 +156,36 @@ function EscanearContent() {
       <div className="overflow-hidden rounded-xl border border-neutral-200 bg-black">
         {state === "idle" && (
           <div className="flex aspect-square flex-col items-center justify-center gap-4 bg-neutral-900 p-6 text-center">
-            <label className="w-full max-w-xs text-left text-sm">
-              <span className="mb-1 block font-medium text-neutral-300">
-                Motivo (solo si es tu ingreso)
-              </span>
-              <select
-                value={selectedReasonId}
-                onChange={(e) => setSelectedReasonId(e.target.value)}
-                className="w-full rounded-md border border-neutral-600 bg-neutral-800 px-3 py-2 text-white"
-              >
-                <option value="">Elegí un motivo…</option>
-                {reasons.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="text-neutral-400 text-xs">
-              Si estás marcando salida, el motivo no se usa.
-            </p>
+            {hasOpenRecord === null ? (
+              <p className="text-sm text-neutral-400">Comprobando tu estado…</p>
+            ) : hasOpenRecord ? (
+              <p className="w-full max-w-xs rounded-md border border-neutral-600 bg-neutral-800 px-3 py-3 text-sm text-white">
+                Ya tenés un ingreso registrado — este escaneo va a marcar tu{" "}
+                <strong>salida</strong>. No hace falta elegir motivo.
+              </p>
+            ) : (
+              <label className="w-full max-w-xs text-left text-sm">
+                <span className="mb-1 block font-medium text-neutral-300">
+                  Motivo del ingreso
+                </span>
+                <select
+                  value={selectedReasonId}
+                  onChange={(e) => setSelectedReasonId(e.target.value)}
+                  className="w-full rounded-md border border-neutral-600 bg-neutral-800 px-3 py-2 text-white"
+                >
+                  <option value="">Elegí un motivo…</option>
+                  {reasons.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <button
               onClick={startCamera}
-              className="rounded-md bg-brand px-5 py-2.5 font-medium text-white hover:bg-brand-dark"
+              disabled={!canActivateCamera}
+              className="rounded-md bg-brand px-5 py-2.5 font-medium text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
             >
               Activar cámara
             </button>
@@ -179,7 +214,10 @@ function EscanearContent() {
             <p className="text-4xl">✅</p>
             <p className="font-medium text-white">{message}</p>
             <button
-              onClick={() => setState("idle")}
+              onClick={() => {
+                checkStatus();
+                setState("idle");
+              }}
               className="rounded-md border border-white/40 px-4 py-2 text-sm text-white hover:bg-white/10"
             >
               Escanear de nuevo
