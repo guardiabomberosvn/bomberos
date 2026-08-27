@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import type { EmergencyType } from "@/lib/types";
+import type { EmergencyType, EmergencyTypeMotive } from "@/lib/types";
 
 const COLOR_OPTIONS = [
   "#b91c1c",
@@ -31,6 +31,72 @@ export function ManageEmergencyTypesModal({
   const [color, setColor] = useState(COLOR_OPTIONS[0]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Motivos (segundo nivel de botones, ej: dentro de "Incendio" → Casa,
+  // Auto, Campo...). Se cargan solo para el tipo que se está expandiendo.
+  const [expandedTypeId, setExpandedTypeId] = useState<string | null>(null);
+  const [motives, setMotives] = useState<EmergencyTypeMotive[]>([]);
+  const [loadingMotives, setLoadingMotives] = useState(false);
+  const [motiveName, setMotiveName] = useState("");
+  const [motiveCode, setMotiveCode] = useState("");
+
+  const loadMotives = async (typeId: string) => {
+    setLoadingMotives(true);
+    const { data } = await supabase
+      .from("emergency_type_motives")
+      .select("*")
+      .eq("emergency_type_id", typeId)
+      .order("sort_order");
+    setMotives((data as EmergencyTypeMotive[]) ?? []);
+    setLoadingMotives(false);
+  };
+
+  useEffect(() => {
+    if (expandedTypeId) loadMotives(expandedTypeId);
+  }, [expandedTypeId]);
+
+  const toggleExpanded = (typeId: string) => {
+    setMotiveName("");
+    setMotiveCode("");
+    setExpandedTypeId((current) => (current === typeId ? null : typeId));
+  };
+
+  const handleAddMotive = async (e: React.FormEvent, typeId: string) => {
+    e.preventDefault();
+    if (!motiveName.trim()) return;
+    const { error: insertError } = await supabase.from("emergency_type_motives").insert({
+      emergency_type_id: typeId,
+      name: motiveName.trim(),
+      code: motiveCode.trim() || null,
+      sort_order: motives.length,
+    });
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+    setMotiveName("");
+    setMotiveCode("");
+    loadMotives(typeId);
+  };
+
+  const handleToggleMotiveActive = async (motive: EmergencyTypeMotive) => {
+    const { error: updateError } = await supabase
+      .from("emergency_type_motives")
+      .update({ is_active: !motive.is_active })
+      .eq("id", motive.id);
+    if (updateError) setError(updateError.message);
+    loadMotives(motive.emergency_type_id);
+  };
+
+  const handleDeleteMotive = async (motive: EmergencyTypeMotive) => {
+    if (!window.confirm(`¿Eliminar el motivo "${motive.name}"?`)) return;
+    const { error: deleteError } = await supabase
+      .from("emergency_type_motives")
+      .delete()
+      .eq("id", motive.id);
+    if (deleteError) setError(deleteError.message);
+    loadMotives(motive.emergency_type_id);
+  };
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,7 +195,7 @@ export function ManageEmergencyTypesModal({
           <input
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="Código, ej: 01-101 (opcional)"
+            placeholder="Código del tipo, ej: 01 (opcional)"
             className="w-full rounded-md border border-neutral-300 px-3 py-2"
           />
           <div className="flex gap-1">
@@ -162,40 +228,108 @@ export function ManageEmergencyTypesModal({
             </p>
           ) : (
             types.map((t) => (
-              <div
-                key={t.id}
-                className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2"
-              >
-                <div className="flex items-center gap-2">
-                  <span
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-white"
-                    style={{ backgroundColor: t.color }}
-                  >
-                    {t.icon}
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium text-neutral-800">
-                      {t.name}
-                    </p>
-                    {t.code && (
-                      <p className="text-xs text-neutral-500">{t.code}</p>
-                    )}
+              <div key={t.id} className="rounded-lg border border-neutral-200 px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-white"
+                      style={{ backgroundColor: t.color }}
+                    >
+                      {t.icon}
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium text-neutral-800">
+                        {t.name}
+                      </p>
+                      {t.code && (
+                        <p className="text-xs text-neutral-500">{t.code}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => toggleExpanded(t.id)}
+                      className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                    >
+                      {expandedTypeId === t.id ? "Ocultar motivos" : "Motivos"}
+                    </button>
+                    <button
+                      onClick={() => handleToggleActive(t)}
+                      className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                    >
+                      {t.is_active ? "Ocultar" : "Mostrar"}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(t)}
+                      className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                    >
+                      Eliminar
+                    </button>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleToggleActive(t)}
-                    className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
-                  >
-                    {t.is_active ? "Ocultar" : "Mostrar"}
-                  </button>
-                  <button
-                    onClick={() => handleDelete(t)}
-                    className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                  >
-                    Eliminar
-                  </button>
-                </div>
+
+                {expandedTypeId === t.id && (
+                  <div className="mt-3 space-y-2 border-t border-neutral-100 pt-3">
+                    <p className="text-xs text-neutral-500">
+                      Botones de &quot;¿de qué es?&quot; para {t.name} — se pueden agregar los que
+                      hagan falta (ej: Casa, Auto, Campo…).
+                    </p>
+                    {loadingMotives ? (
+                      <p className="text-xs text-neutral-400">Cargando…</p>
+                    ) : motives.length === 0 ? (
+                      <p className="text-xs text-neutral-400">Todavía no hay motivos para este tipo.</p>
+                    ) : (
+                      <ul className="divide-y divide-neutral-100">
+                        {motives.map((m) => (
+                          <li key={m.id} className="flex items-center justify-between py-1.5 text-sm">
+                            <span className={m.is_active ? "" : "text-neutral-400 line-through"}>
+                              {m.name}
+                              {m.code ? ` (${m.code})` : ""}
+                            </span>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleToggleMotiveActive(m)}
+                                className="text-xs font-medium text-neutral-500 hover:text-neutral-800"
+                              >
+                                {m.is_active ? "Ocultar" : "Mostrar"}
+                              </button>
+                              <button
+                                onClick={() => handleDeleteMotive(m)}
+                                className="text-xs font-medium text-red-700 hover:underline"
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <form
+                      onSubmit={(e) => handleAddMotive(e, t.id)}
+                      className="flex flex-wrap gap-2 pt-1"
+                    >
+                      <input
+                        value={motiveName}
+                        onChange={(e) => setMotiveName(e.target.value)}
+                        placeholder="Nombre, ej: Casa"
+                        required
+                        className="flex-1 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                      />
+                      <input
+                        value={motiveCode}
+                        onChange={(e) => setMotiveCode(e.target.value)}
+                        placeholder="Código, ej: 101"
+                        className="w-24 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                      />
+                      <button
+                        type="submit"
+                        className="rounded-md bg-brand px-3 py-1 text-xs font-medium text-white hover:bg-brand-dark"
+                      >
+                        + Agregar
+                      </button>
+                    </form>
+                  </div>
+                )}
               </div>
             ))
           )}

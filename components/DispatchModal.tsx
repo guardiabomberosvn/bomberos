@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { sendTelegramAlert } from "@/lib/telegram";
 import { googleMapsSearchUrl } from "@/lib/maps";
-import type { DispatchGroup, EmergencyTarget, EmergencyType, Profile } from "@/lib/types";
+import type { DispatchGroup, EmergencyTarget, EmergencyType, EmergencyTypeMotive, Profile } from "@/lib/types";
 
 export function DispatchModal({
   type,
@@ -32,6 +32,24 @@ export function DispatchModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // "¿De qué es?": motivos configurados para este tipo (ej: dentro de
+  // "Incendio" → Casa, Auto, Campo…). Si el tipo no tiene motivos
+  // cargados, no se muestra nada acá y la alarma se acciona igual.
+  const [motives, setMotives] = useState<EmergencyTypeMotive[]>([]);
+  const [selectedMotiveId, setSelectedMotiveId] = useState("");
+
+  useEffect(() => {
+    supabase
+      .from("emergency_type_motives")
+      .select("*")
+      .eq("emergency_type_id", type.id)
+      .eq("is_active", true)
+      .order("sort_order")
+      .then(({ data }) => setMotives((data as EmergencyTypeMotive[]) ?? []));
+  }, [type.id]);
+
+  const selectedMotive = motives.find((m) => m.id === selectedMotiveId) ?? null;
+
   const handleDispatch = async () => {
     setError(null);
 
@@ -46,16 +64,22 @@ export function DispatchModal({
 
     setSubmitting(true);
 
+    const displayName = selectedMotive ? `${type.name} - ${selectedMotive.name}` : type.name;
+    const fullCode = [type.code, selectedMotive?.code].filter(Boolean).join("-");
+
     const { data: created, error: insertError } = await supabase
       .from("emergencies")
       .insert({
         organization_id: organizationId,
-        title: type.code ? `${type.name} · ${type.code}` : type.name,
+        title: fullCode ? `${displayName} · ${fullCode}` : displayName,
         address: address.trim() || null,
         notes: notes.trim() || null,
         target,
         needs_response: needsResponse,
         emergency_type_id: type.id,
+        motive_id: selectedMotive?.id ?? null,
+        motive_code: selectedMotive?.code ?? null,
+        motive_name: selectedMotive?.name ?? null,
         created_by: createdBy,
       })
       .select()
@@ -112,7 +136,7 @@ export function DispatchModal({
       );
 
       const message =
-        `🚨 <b>${type.name}${type.code ? " · " + type.code : ""}</b>\n` +
+        `🚨 <b>${displayName}${fullCode ? " · " + fullCode : ""}</b>\n` +
         (address.trim() ? `📍 ${address.trim()}\n🗺️ ${googleMapsSearchUrl(address.trim())}\n` : "") +
         (notes.trim() ? `${notes.trim()}\n` : "") +
         (needsResponse
@@ -173,6 +197,28 @@ export function DispatchModal({
             )}
           </div>
         </div>
+
+        {motives.length > 0 && (
+          <div className="mb-4 text-sm">
+            <span className="mb-1 block font-medium text-neutral-700">¿De qué es?</span>
+            <div className="flex flex-wrap gap-2">
+              {motives.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setSelectedMotiveId((current) => (current === m.id ? "" : m.id))}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                    selectedMotiveId === m.id
+                      ? "bg-brand text-white"
+                      : "border border-neutral-300 text-neutral-700"
+                  }`}
+                >
+                  {m.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">

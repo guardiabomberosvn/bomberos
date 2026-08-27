@@ -75,6 +75,10 @@ export interface Emergency {
   created_at: string;
   cancelled_at: string | null;
   cancel_reason: string | null;
+  emergency_type_id: string | null;
+  motive_id: string | null;
+  motive_code: string | null;
+  motive_name: string | null;
 }
 
 export interface EmergencyResponse {
@@ -98,6 +102,15 @@ export interface EmergencyType {
   code: string | null;
   color: string;
   icon: string;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface EmergencyTypeMotive {
+  id: string;
+  emergency_type_id: string;
+  name: string;
+  code: string | null;
   sort_order: number;
   is_active: boolean;
 }
