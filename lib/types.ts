@@ -241,7 +241,9 @@ export interface FuelLoad {
   km: number | null;
   cost: number | null;
   notes: string | null;
-  registered_by: string;
+  // Ojo: en esta tabla la columna real en la base es "created_by" (no
+  // "registered_by" como en vehicle_movements y otras tablas).
+  created_by: string;
 }
 
 export type MaintenanceType = "preventivo" | "correctivo" | "inspeccion";

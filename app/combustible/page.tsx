@@ -143,7 +143,7 @@ function CombustibleContent() {
       liters: Number(liters),
       km: km ? Number(km) : null,
       cost: cost ? Number(cost) : null,
-      registered_by: profile.id,
+      created_by: profile.id,
     });
 
     if (insertError) {
