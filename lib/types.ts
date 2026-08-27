@@ -14,6 +14,11 @@ export interface Profile {
   availability: Availability;
   telegram_chat_id: string | null;
   notify_maintenance: boolean;
+  // Permisos personalizados por usuario (apartado "Administración"). null =
+  // usa el comportamiento por defecto de su rol (compatibilidad con
+  // usuarios existentes); un array = acceso restringido/ampliado a
+  // exactamente esas secciones (ver lib/permissions.ts).
+  allowed_sections: string[] | null;
   created_at: string;
   updated_at: string;
 }

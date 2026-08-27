@@ -559,7 +559,7 @@ function AsistenciaGeneralContent() {
 
 export default function AsistenciaGeneralPage() {
   return (
-    <ProtectedRoute allowedRoles={["admin", "guardia"]}>
+    <ProtectedRoute section="asistencia_general">
       <AppShell>
         <AsistenciaGeneralContent />
       </AppShell>

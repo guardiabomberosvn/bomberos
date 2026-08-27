@@ -648,7 +648,7 @@ function StockContent() {
 
 export default function StockPage() {
   return (
-    <ProtectedRoute allowedRoles={["admin", "guardia"]}>
+    <ProtectedRoute section="stock">
       <AppShell>
         <StockContent />
       </AppShell>

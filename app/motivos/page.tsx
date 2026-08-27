@@ -190,7 +190,7 @@ function MotivosContent() {
 
 export default function MotivosPage() {
   return (
-    <ProtectedRoute allowedRoles={["admin"]}>
+    <ProtectedRoute section="motivos">
       <AppShell>
         <MotivosContent />
       </AppShell>

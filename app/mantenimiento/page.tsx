@@ -484,7 +484,7 @@ function MantenimientoContent() {
 
 export default function MantenimientoPage() {
   return (
-    <ProtectedRoute allowedRoles={["admin", "guardia"]}>
+    <ProtectedRoute section="mantenimiento">
       <AppShell>
         <MantenimientoContent />
       </AppShell>

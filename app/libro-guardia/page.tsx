@@ -1529,7 +1529,7 @@ function AgendaTab({ myId }: { myId: string }) {
 
 export default function LibroGuardiaPage() {
   return (
-    <ProtectedRoute allowedRoles={["admin", "guardia"]}>
+    <ProtectedRoute section="libro_guardia">
       <AppShell>
         <LibroGuardiaContent />
       </AppShell>

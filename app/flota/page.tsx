@@ -405,7 +405,7 @@ function FlotaContent() {
 
 export default function FlotaPage() {
   return (
-    <ProtectedRoute allowedRoles={["admin", "guardia"]}>
+    <ProtectedRoute section="flota">
       <AppShell>
         <FlotaContent />
       </AppShell>

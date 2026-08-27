@@ -416,7 +416,7 @@ function CombustibleContent() {
 
 export default function CombustiblePage() {
   return (
-    <ProtectedRoute allowedRoles={["admin", "guardia"]}>
+    <ProtectedRoute section="combustible">
       <AppShell>
         <CombustibleContent />
       </AppShell>

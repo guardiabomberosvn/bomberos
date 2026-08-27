@@ -281,7 +281,7 @@ function PersonalContent() {
 
 export default function PersonalPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute section="personal">
       <AppShell>
         <PersonalContent />
       </AppShell>

@@ -250,7 +250,7 @@ function QrConsolaContent() {
 
 export default function QrConsolaPage() {
   return (
-    <ProtectedRoute allowedRoles={["admin", "guardia"]}>
+    <ProtectedRoute section="qr_consola">
       <AppShell>
         <QrConsolaContent />
       </AppShell>

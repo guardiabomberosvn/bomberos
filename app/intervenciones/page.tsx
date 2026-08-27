@@ -6,7 +6,7 @@ import { IntervencionesContent } from "@/components/IntervencionesContent";
 
 export default function IntervencionesPage() {
   return (
-    <ProtectedRoute allowedRoles={["admin", "guardia"]}>
+    <ProtectedRoute section="libro_guardia">
       <AppShell>
         <IntervencionesContent />
       </AppShell>

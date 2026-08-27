@@ -4,16 +4,29 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/lib/types";
+import { hasSectionAccess, type SectionKey } from "@/lib/permissions";
 
 export function ProtectedRoute({
   children,
   allowedRoles,
+  section,
 }: {
   children: React.ReactNode;
   allowedRoles?: Role[];
+  // Cuando se pasa "section", el acceso se decide con el sistema de
+  // permisos por usuario (lib/permissions.ts) en vez de solo por rol.
+  section?: SectionKey;
 }) {
   const { session, profile, loading } = useAuth();
   const router = useRouter();
+
+  const allowed = !profile
+    ? false
+    : section
+    ? hasSectionAccess(profile, section)
+    : allowedRoles
+    ? allowedRoles.includes(profile.role)
+    : true;
 
   useEffect(() => {
     if (loading) return;
@@ -25,10 +38,10 @@ export function ProtectedRoute({
       router.replace("/");
       return;
     }
-    if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
+    if (profile && !allowed) {
       router.replace("/dashboard");
     }
-  }, [loading, session, profile, allowedRoles, router]);
+  }, [loading, session, profile, allowed, router]);
 
   if (loading || !session || !profile) {
     return (
@@ -38,7 +51,7 @@ export function ProtectedRoute({
     );
   }
 
-  if (allowedRoles && !allowedRoles.includes(profile.role)) {
+  if (!allowed) {
     return null;
   }
 

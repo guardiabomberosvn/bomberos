@@ -225,7 +225,7 @@ function GruposContent() {
 
 export default function GruposPage() {
   return (
-    <ProtectedRoute allowedRoles={["admin"]}>
+    <ProtectedRoute section="grupos">
       <AppShell>
         <GruposContent />
       </AppShell>

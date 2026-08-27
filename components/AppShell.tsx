@@ -5,7 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
-import { ROLE_LABELS } from "@/lib/types";
+import { ROLE_LABELS, type Profile } from "@/lib/types";
+import { hasSectionAccess, SECTIONS } from "@/lib/permissions";
 
 interface NavItem {
   href: string;
@@ -21,25 +22,21 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/hallazgos", label: "Hallazgos", icon: "🚧" },
 ];
 
-const OPERATION_NAV_ITEMS: NavItem[] = [
-  { href: "/asistencia-general", label: "Asistencia (todos)", icon: "📋" },
-  { href: "/qr-consola", label: "QR consola", icon: "🖥️" },
-  { href: "/libro-guardia", label: "Libro de Guardia", icon: "📖" },
-  { href: "/flota", label: "Flota", icon: "🚒" },
-  { href: "/combustible", label: "Combustible", icon: "⛽" },
-  { href: "/mantenimiento", label: "Mantenimiento", icon: "🔧" },
-  { href: "/stock", label: "Stock", icon: "📦" },
-];
-
-const ADMIN_NAV_ITEMS: NavItem[] = [
-  { href: "/personal", label: "Personal", icon: "👥" },
-  { href: "/grupos", label: "Grupos", icon: "🧑‍🤝‍🧑" },
-  { href: "/motivos", label: "Motivos de asistencia", icon: "🏷️" },
-];
-
 const ACCOUNT_NAV_ITEMS: NavItem[] = [
   { href: "/vincular-telegram", label: "Alertas por Telegram", icon: "✈️" },
 ];
+
+// Las secciones de "Operación" y "Configuración" ya no son fijas por rol:
+// se arman según lo que cada usuario tiene habilitado (lib/permissions.ts),
+// para que el menú solo muestre lo que esa persona puede abrir.
+function navItemsForGroup(profile: Profile | null, group: "operacion" | "configuracion"): NavItem[] {
+  if (!profile) return [];
+  return SECTIONS.filter((s) => s.group === group && hasSectionAccess(profile, s.key)).map((s) => ({
+    href: s.href,
+    label: s.label,
+    icon: s.icon,
+  }));
+}
 
 function initials(name: string) {
   return name
@@ -257,13 +254,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isAdmin = profile?.role === "admin";
-  const isStaff = isAdmin || profile?.role === "guardia";
 
   const primaryItems = [...NAV_ITEMS];
-  if (!isStaff) primaryItems.push({ href: "/personal", label: "Personal", icon: "👥" });
-
-  const operationItems = isStaff ? OPERATION_NAV_ITEMS : [];
-  const adminItems = isAdmin ? ADMIN_NAV_ITEMS : [];
+  const operationItems = navItemsForGroup(profile, "operacion");
+  const adminItems = navItemsForGroup(profile, "configuracion");
+  if (isAdmin) {
+    adminItems.push({ href: "/administracion", label: "Administración", icon: "🛡️" });
+  }
 
   const sections: NavSection[] = [
     { title: null, items: primaryItems },
