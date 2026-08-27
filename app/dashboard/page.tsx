@@ -52,9 +52,15 @@ function DashboardContent() {
         const vehicleList = (v as Vehicle[]) ?? [];
         setMaintenanceRecords(maintenanceList);
         setVehicles(vehicleList);
-        // Avisa por Telegram (a los contactos configurados) las órdenes que
-        // acaban de entrar en alerta. No bloqueamos el dashboard por esto.
-        checkAndNotifyMaintenanceDueDates(profile.organization_id, maintenanceList, vehicleList);
+        // Avisa por Telegram (a los contactos configurados, o al asignado si
+        // ya está "en proceso") las órdenes que acaban de entrar en alerta.
+        // No bloqueamos el dashboard por esto.
+        checkAndNotifyMaintenanceDueDates(
+          profile.organization_id,
+          maintenanceList,
+          vehicleList,
+          (profiles as Profile[]) ?? []
+        );
       }
 
       setPersonal((profiles as Profile[]) ?? []);

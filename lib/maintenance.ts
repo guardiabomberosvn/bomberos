@@ -81,52 +81,104 @@ export async function notifyResponsible(responsibleProfile: Profile | undefined 
   await sendTelegramMessage(responsibleProfile.telegram_chat_id, message);
 }
 
-const ALERT_LEVELS_TO_NOTIFY: MaintenanceAlertLevel[] = ["proximo", "muy_proximo", "vencido"];
+// Avisos fijos mientras la orden sigue "pendiente": 15 días antes, 1 semana
+// antes y 1 día antes (o ya vencido). Cada uno se manda una sola vez.
+type PendingCheckpoint = "15_dias" | "1_semana" | "1_dia";
 
-const ALERT_LEVEL_TELEGRAM_LABELS: Record<string, string> = {
-  proximo: "🟡 Próximo a vencer",
-  muy_proximo: "🟠 Muy próximo a vencer",
-  vencido: "🔴 VENCIDO",
+const PENDING_CHECKPOINT_RANK: Record<PendingCheckpoint, number> = {
+  "15_dias": 1,
+  "1_semana": 2,
+  "1_dia": 3,
+};
+
+function pendingCheckpointForDaysLeft(daysLeft: number): PendingCheckpoint | null {
+  if (daysLeft <= 1) return "1_dia";
+  if (daysLeft <= 7) return "1_semana";
+  if (daysLeft <= 15) return "15_dias";
+  return null;
+}
+
+const PENDING_CHECKPOINT_TELEGRAM_LABELS: Record<PendingCheckpoint, string> = {
+  "15_dias": "🟡 Vence en 15 días o menos",
+  "1_semana": "🟠 Vence en 1 semana o menos",
+  "1_dia": "🔴 Vence mañana o ya venció",
 };
 
 /**
- * Revisa las órdenes de mantenimiento pendientes y avisa por Telegram (a los
- * contactos configurados) las que están en 🟡 próximo, 🟠 muy próximo o
- * 🔴 vencido. Avisa una vez por cada nivel (guarda el último nivel avisado en
- * alert_notified_level), así que si una orden escala de próximo a vencido sí
- * vuelve a avisar, pero no repite el aviso mientras se mantenga en el mismo
- * nivel. Si dos personas tienen la app abierta al mismo tiempo, el "claim"
- * con el update condicional asegura que el aviso se mande una sola vez igual.
+ * Revisa las órdenes de mantenimiento pendientes y manda los avisos por
+ * Telegram que correspondan:
+ *
+ *  - Mientras la orden sigue "pendiente": tres avisos fijos, cada uno una
+ *    sola vez, a los contactos generales configurados — 15 días antes de la
+ *    fecha objetivo, 1 semana antes y 1 día antes (o vencido). Se guarda en
+ *    alert_checkpoint hasta cuál de los tres ya se mandó, para no repetir.
+ *  - Si la orden pasa a "en proceso", esos tres avisos generales se cortan:
+ *    en su lugar se manda un único mensaje, solo a la persona asignada como
+ *    responsable, el día antes de que venza (o si ya venció y sigue en
+ *    proceso).
+ *
+ * El "claim" con el update condicional evita que dos sesiones abiertas al
+ * mismo tiempo (o dos recargas seguidas) manden el mismo aviso duplicado.
  */
 export async function checkAndNotifyMaintenanceDueDates(
   organizationId: string,
   records: MaintenanceRecord[],
-  vehicles: Vehicle[]
+  vehicles: Vehicle[],
+  personal: Profile[]
 ) {
-  const pending = records.filter((r) => r.status !== "completado");
+  const pending = records.filter((r) => r.status !== "completado" && r.target_date);
 
   for (const r of pending) {
     const vehicle = vehicles.find((v) => v.id === r.vehicle_id);
-    const level = getMaintenanceAlertLevel(r, vehicle?.km);
-    if (!ALERT_LEVELS_TO_NOTIFY.includes(level)) continue;
-    if (r.alert_notified_level === level) continue;
+    const daysLeft = Math.floor(
+      (new Date(r.target_date as string).getTime() - Date.now()) / DAY_MS
+    );
 
-    // "Reclama" el aviso de este nivel: si otra sesión ya lo marcó primero
-    // con el mismo nivel, esta actualización no toca ninguna fila y no
-    // mandamos el mensaje duplicado.
+    if (r.status === "en_proceso") {
+      if (daysLeft > 1) continue;
+      if (r.alert_checkpoint === "en_proceso_dia_antes") continue;
+      const responsible = personal.find((p) => p.id === r.responsible_id);
+      if (!responsible) continue;
+
+      const { data: claimed } = await supabase
+        .from("maintenance_records")
+        .update({ alert_checkpoint: "en_proceso_dia_antes", alert_notified_at: new Date().toISOString() })
+        .eq("id", r.id)
+        .or("alert_checkpoint.is.null,alert_checkpoint.neq.en_proceso_dia_antes")
+        .select("id");
+      if (!claimed || claimed.length === 0) continue;
+
+      await notifyResponsible(
+        responsible,
+        `🔧 <b>Mantenimiento en proceso — vence mañana</b>\n` +
+          `${r.work}${vehicle ? " — " + vehicle.name : ""}\n` +
+          `Fecha objetivo: ${r.target_date}\n` +
+          `Revisalo en la app, sección Mantenimiento.`
+      );
+      continue;
+    }
+
+    const checkpoint = pendingCheckpointForDaysLeft(daysLeft);
+    if (!checkpoint) continue;
+    const alreadyRank =
+      r.alert_checkpoint && r.alert_checkpoint in PENDING_CHECKPOINT_RANK
+        ? PENDING_CHECKPOINT_RANK[r.alert_checkpoint as PendingCheckpoint]
+        : 0;
+    if (PENDING_CHECKPOINT_RANK[checkpoint] <= alreadyRank) continue;
+
     const { data: claimed } = await supabase
       .from("maintenance_records")
-      .update({ alert_notified_level: level, alert_notified_at: new Date().toISOString() })
+      .update({ alert_checkpoint: checkpoint, alert_notified_at: new Date().toISOString() })
       .eq("id", r.id)
-      .or(`alert_notified_level.is.null,alert_notified_level.neq.${level}`)
+      .or(`alert_checkpoint.is.null,alert_checkpoint.neq.${checkpoint}`)
       .select("id");
     if (!claimed || claimed.length === 0) continue;
 
-    const label = ALERT_LEVEL_TELEGRAM_LABELS[level] ?? level;
+    const label = PENDING_CHECKPOINT_TELEGRAM_LABELS[checkpoint];
     const message =
       `🔧 <b>Mantenimiento ${label}</b>\n` +
       `${r.work}${vehicle ? " — " + vehicle.name : ""}\n` +
-      (r.target_date ? `Fecha objetivo: ${r.target_date}\n` : "") +
+      `Fecha objetivo: ${r.target_date}\n` +
       `Revisalo en la app, sección Mantenimiento.`;
     await notifyMaintenanceContacts(organizationId, message);
   }

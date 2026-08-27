@@ -276,8 +276,17 @@ export interface MaintenanceRecord {
   created_at: string;
   completed_at: string | null;
   alert_notified_at: string | null;
-  alert_notified_level: MaintenanceAlertLevel | null;
+  // Hasta qué aviso fijo ya se mandó para esta orden: 15 días antes, 1
+  // semana antes, 1 día antes (mientras sigue "pendiente"), o el aviso
+  // único al asignado cuando ya está "en proceso".
+  alert_checkpoint: MaintenanceAlertCheckpoint | null;
 }
+
+export type MaintenanceAlertCheckpoint =
+  | "15_dias"
+  | "1_semana"
+  | "1_dia"
+  | "en_proceso_dia_antes";
 
 // Nivel de alerta visual calculado en el cliente comparando la fecha/km
 // objetivo contra hoy / el km actual del vehículo.

@@ -161,13 +161,16 @@ function MantenimientoContent() {
   };
 
   const handleTargetDateUpdate = async (r: MaintenanceRecord, targetDateValue: string) => {
-    // Al cambiar la fecha objetivo reiniciamos el nivel de alerta ya avisado,
-    // para que si la orden vuelve a acercarse al vencimiento se avise de
-    // nuevo por Telegram (si no, como ya se había avisado, no volvería a
-    // avisar nunca más para esta orden).
+    const newValue = targetDateValue || null;
+    // Antes esto se disparaba con cada click afuera del campo, aunque no se
+    // hubiera cambiado la fecha — y como reiniciaba el aviso ya mandado, eso
+    // era lo que hacía que llegaran avisos de mantenimiento duplicados. Ahora
+    // solo reinicia el aviso cuando la fecha realmente cambió (así, si la
+    // orden vuelve a acercarse al vencimiento, sí avisa de nuevo).
+    if (newValue === r.target_date) return;
     const { error: updateError } = await supabase
       .from("maintenance_records")
-      .update({ target_date: targetDateValue || null, alert_notified_level: null })
+      .update({ target_date: newValue, alert_checkpoint: null })
       .eq("id", r.id);
     if (updateError) setError(updateError.message);
     load();

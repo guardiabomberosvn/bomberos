@@ -25,7 +25,6 @@ const OPERATION_NAV_ITEMS: NavItem[] = [
   { href: "/asistencia-general", label: "Asistencia (todos)", icon: "📋" },
   { href: "/qr-consola", label: "QR consola", icon: "🖥️" },
   { href: "/libro-guardia", label: "Libro de Guardia", icon: "📖" },
-  { href: "/intervenciones", label: "Intervenciones", icon: "🔥" },
   { href: "/flota", label: "Flota", icon: "🚒" },
   { href: "/combustible", label: "Combustible", icon: "⛽" },
   { href: "/mantenimiento", label: "Mantenimiento", icon: "🔧" },

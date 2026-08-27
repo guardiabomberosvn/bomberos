@@ -192,6 +192,25 @@ function FlotaContent() {
     return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   };
 
+  // Resumen rápido del vehículo: todo lo que hoy está repartido entre
+  // Combustible, Mantenimiento y Movimientos, nucleado en un solo lugar.
+  const buildSummary = (vehicleId: string) => {
+    const vehicleFuel = fuelLoads.filter((f) => f.vehicle_id === vehicleId);
+    const vehicleMaintenance = maintenance.filter((m) => m.vehicle_id === vehicleId);
+    const vehicleMovements = movements.filter((m) => m.vehicle_id === vehicleId);
+    const vehicleFindings = findings.filter((f) => f.vehicle_id === vehicleId);
+
+    return {
+      fuelLiters: vehicleFuel.reduce((sum, f) => sum + f.liters, 0),
+      fuelCost: vehicleFuel.reduce((sum, f) => sum + (f.cost ?? 0), 0),
+      fuelCount: vehicleFuel.length,
+      movementsCount: vehicleMovements.length,
+      maintenancePending: vehicleMaintenance.filter((m) => m.status !== "completado").length,
+      maintenanceDone: vehicleMaintenance.filter((m) => m.status === "completado").length,
+      findingsPending: vehicleFindings.filter((f) => f.status === "pendiente").length,
+    };
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-neutral-900">Flota</h1>
@@ -239,6 +258,7 @@ function FlotaContent() {
           {vehicles.map((v) => {
             const isExpanded = expanded === v.id;
             const history = isExpanded ? buildHistory(v.id) : [];
+            const summary = isExpanded ? buildSummary(v.id) : null;
             return (
               <div key={v.id} className="rounded-xl border border-neutral-200 bg-white">
                 <button
@@ -308,6 +328,42 @@ function FlotaContent() {
                         >
                           Eliminar
                         </button>
+                      </div>
+                    )}
+
+                    {summary && (
+                      <div className="grid grid-cols-2 gap-2 rounded-lg bg-neutral-50 p-3 sm:grid-cols-4">
+                        <div>
+                          <p className="text-xs text-neutral-500">Combustible</p>
+                          <p className="text-sm font-bold text-neutral-900">
+                            {summary.fuelLiters.toLocaleString("es-AR")} L
+                          </p>
+                          <p className="text-xs text-neutral-500">
+                            ${summary.fuelCost.toLocaleString("es-AR")} · {summary.fuelCount} cargas
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-neutral-500">Salidas</p>
+                          <p className="text-sm font-bold text-neutral-900">
+                            {summary.movementsCount}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-neutral-500">Mantenimiento</p>
+                          <p className="text-sm font-bold text-neutral-900">
+                            {summary.maintenancePending} pendiente
+                            {summary.maintenancePending === 1 ? "" : "s"}
+                          </p>
+                          <p className="text-xs text-neutral-500">
+                            {summary.maintenanceDone} completado{summary.maintenanceDone === 1 ? "" : "s"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-neutral-500">Hallazgos</p>
+                          <p className="text-sm font-bold text-neutral-900">
+                            {summary.findingsPending} pendiente{summary.findingsPending === 1 ? "" : "s"}
+                          </p>
+                        </div>
                       </div>
                     )}
 

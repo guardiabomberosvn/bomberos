@@ -44,7 +44,7 @@ const emptyVictimForm: Partial<InterventionVictim> = {
 
 const emptyVehicleForm: Partial<InterventionDamagedVehicle> = {};
 
-function IntervencionesContent() {
+export function IntervencionesContent() {
   const { profile } = useAuth();
   const [interventions, setInterventions] = useState<Intervention[]>([]);
   const [units, setUnits] = useState<InterventionUnit[]>([]);

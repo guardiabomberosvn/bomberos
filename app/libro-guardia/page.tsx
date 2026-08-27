@@ -7,6 +7,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { exportToExcel } from "@/lib/export";
 import { StatsBarChart } from "@/components/StatsBarChart";
+import { IntervencionesContent } from "@/app/intervenciones/page";
 import type {
   AgendaEvent,
   GuardCall,
@@ -20,7 +21,7 @@ import type {
 } from "@/lib/types";
 import { MOVEMENT_REASON_LABELS, OTHER_FORCE_SERVICES } from "@/lib/types";
 
-type Tab = "turno" | "llamadas" | "avisos" | "visitas" | "movimientos" | "agenda";
+type Tab = "turno" | "llamadas" | "avisos" | "visitas" | "movimientos" | "agenda" | "intervenciones";
 
 function LibroGuardiaContent() {
   const { profile } = useAuth();
@@ -35,6 +36,7 @@ function LibroGuardiaContent() {
           [
             ["turno", "Turno"],
             ["llamadas", "Llamadas"],
+            ["intervenciones", "Intervenciones"],
             ["avisos", "Avisos a otras fuerzas"],
             ["visitas", "Proveedores y visitas"],
             ["movimientos", "Movimientos de vehículos"],
@@ -57,6 +59,7 @@ function LibroGuardiaContent() {
 
       {tab === "turno" && profile && <TurnoTab myId={profile.id} />}
       {tab === "llamadas" && profile && <LlamadasTab myId={profile.id} />}
+      {tab === "intervenciones" && profile && <IntervencionesContent />}
       {tab === "avisos" && profile && <AvisosTab myId={profile.id} />}
       {tab === "visitas" && profile && <VisitasTab myId={profile.id} />}
       {tab === "movimientos" && profile && <MovimientosTab myId={profile.id} />}
