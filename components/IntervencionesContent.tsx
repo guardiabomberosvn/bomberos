@@ -384,11 +384,14 @@ export function IntervencionesContent() {
     load();
   };
 
-  const handleDeleteUnit = async (unitId: string) => {
+  const handleDeleteUnit = async (unit: InterventionUnit) => {
+    if (!window.confirm(`¿Quitar la unidad "${vehicleName(unit.vehicle_id)}" de esta intervención?`)) {
+      return;
+    }
     const { error: deleteError } = await supabase
       .from("intervention_units")
       .delete()
-      .eq("id", unitId);
+      .eq("id", unit.id);
     if (deleteError) setError(deleteError.message);
     load();
   };
@@ -409,8 +412,12 @@ export function IntervencionesContent() {
     load();
   };
 
-  const handleDeleteDamagedVehicle = async (id: string) => {
-    const { error: deleteError } = await supabase.from("intervention_damaged_vehicles").delete().eq("id", id);
+  const handleDeleteDamagedVehicle = async (dv: InterventionDamagedVehicle) => {
+    const label = [dv.brand, dv.model, dv.plate].filter(Boolean).join(" · ") || "este vehículo";
+    if (!window.confirm(`¿Quitar ${label} de los vehículos siniestrados de esta intervención?`)) {
+      return;
+    }
+    const { error: deleteError } = await supabase.from("intervention_damaged_vehicles").delete().eq("id", dv.id);
     if (deleteError) setError(deleteError.message);
     load();
   };
@@ -441,8 +448,15 @@ export function IntervencionesContent() {
     load();
   };
 
-  const handleDeleteVictim = async (id: string) => {
-    const { error: deleteError } = await supabase.from("intervention_victims").delete().eq("id", id);
+  const handleDeleteVictim = async (victim: InterventionVictim) => {
+    if (
+      !window.confirm(
+        `¿Quitar a ${victim.full_name || "este damnificado"} de esta intervención?`
+      )
+    ) {
+      return;
+    }
+    const { error: deleteError } = await supabase.from("intervention_victims").delete().eq("id", victim.id);
     if (deleteError) setError(deleteError.message);
     load();
   };
@@ -1165,7 +1179,7 @@ export function IntervencionesContent() {
                                     Editar
                                   </button>
                                   <button
-                                    onClick={() => handleDeleteUnit(u.id)}
+                                    onClick={() => handleDeleteUnit(u)}
                                     className="text-xs font-medium text-red-700 hover:underline"
                                   >
                                     Quitar
@@ -1247,7 +1261,7 @@ export function IntervencionesContent() {
                                 {dv.policy_number ? ` (Póliza ${dv.policy_number})` : ""}
                               </span>
                               <button
-                                onClick={() => handleDeleteDamagedVehicle(dv.id)}
+                                onClick={() => handleDeleteDamagedVehicle(dv)}
                                 className="text-xs font-medium text-red-700 hover:underline"
                               >
                                 Quitar
@@ -1333,7 +1347,7 @@ export function IntervencionesContent() {
                                 {v.transferred ? " · Trasladado" : ""}
                               </span>
                               <button
-                                onClick={() => handleDeleteVictim(v.id)}
+                                onClick={() => handleDeleteVictim(v)}
                                 className="text-xs font-medium text-red-700 hover:underline"
                               >
                                 Quitar

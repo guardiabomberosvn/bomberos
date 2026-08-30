@@ -119,7 +119,6 @@ function DashboardContent() {
 
   const activos = personal.filter((p) => p.is_active);
   const disponibles = activos.filter((p) => p.availability === "disponible");
-  const presentes = activos.filter((p) => presentesIds.has(p.id));
 
   const urgentMaintenance = maintenanceRecords.filter((r) => {
     const vehicle = vehicles.find((v) => v.id === r.vehicle_id);
@@ -207,20 +206,8 @@ function DashboardContent() {
         </Link>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="max-w-xs">
         <StatCard label="Personal activo" value={activos.length} icon="👥" />
-        <StatCard
-          label="Disponibles"
-          value={disponibles.length}
-          icon="✅"
-          accent="text-emerald-600"
-        />
-        <StatCard
-          label="Presentes en el cuartel"
-          value={presentes.length}
-          icon="🏠"
-          accent="text-brand"
-        />
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-card">
