@@ -18,6 +18,7 @@ import type { Profile, Role } from "@/lib/types";
 // ---------------------------------------------------------------------------
 
 export type SectionKey =
+  | "dashboard"
   | "asistencia_general"
   | "qr_consola"
   | "libro_guardia"
@@ -34,11 +35,12 @@ export interface SectionDef {
   label: string;
   icon: string;
   href: string;
-  group: "operacion" | "configuracion";
+  group: "general" | "operacion" | "configuracion";
   legacyRoles: Role[];
 }
 
 export const SECTIONS: SectionDef[] = [
+  { key: "dashboard", label: "Dashboard", icon: "🏠", href: "/dashboard", group: "general", legacyRoles: ["admin", "guardia", "bombero"] },
   { key: "asistencia_general", label: "Asistencia (todos)", icon: "📋", href: "/asistencia-general", group: "operacion", legacyRoles: ["admin", "guardia"] },
   { key: "qr_consola", label: "QR consola", icon: "🖥️", href: "/qr-consola", group: "operacion", legacyRoles: ["admin", "guardia"] },
   { key: "libro_guardia", label: "Libro de Guardia", icon: "📖", href: "/libro-guardia", group: "operacion", legacyRoles: ["admin", "guardia"] },
@@ -46,7 +48,10 @@ export const SECTIONS: SectionDef[] = [
   { key: "combustible", label: "Combustible", icon: "⛽", href: "/combustible", group: "operacion", legacyRoles: ["admin", "guardia"] },
   { key: "mantenimiento", label: "Mantenimiento", icon: "🔧", href: "/mantenimiento", group: "operacion", legacyRoles: ["admin", "guardia"] },
   { key: "stock", label: "Stock", icon: "📦", href: "/stock", group: "operacion", legacyRoles: ["admin", "guardia"] },
-  { key: "personal", label: "Personal", icon: "👥", href: "/personal", group: "configuracion", legacyRoles: ["admin", "guardia", "bombero"] },
+  // Personal: solo admin y guardia lo ven por defecto (antes también lo
+  // veían los bomberos). Un admin puede seguir dándoselo puntualmente a
+  // alguien desde Administración.
+  { key: "personal", label: "Personal", icon: "👥", href: "/personal", group: "configuracion", legacyRoles: ["admin", "guardia"] },
   { key: "grupos", label: "Grupos", icon: "🧑‍🤝‍🧑", href: "/grupos", group: "configuracion", legacyRoles: ["admin"] },
   { key: "motivos", label: "Motivos de asistencia", icon: "🏷️", href: "/motivos", group: "configuracion", legacyRoles: ["admin"] },
 ];

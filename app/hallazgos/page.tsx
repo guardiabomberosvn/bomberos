@@ -94,8 +94,13 @@ function HallazgosContent() {
       const uploadForm = new FormData();
       uploadForm.append("file", photoFile);
       try {
+        // La ruta exige sesión iniciada — se manda el token que ya tiene
+        // guardado el cliente de Supabase.
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
         const uploadRes = await fetch("/api/upload-hallazgo-photo", {
           method: "POST",
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
           body: uploadForm,
         });
         const uploadData = await uploadRes.json();

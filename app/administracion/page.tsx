@@ -82,6 +82,7 @@ function AdministracionContent() {
     load();
   };
 
+  const generalSections = SECTIONS.filter((s) => s.group === "general");
   const operacionSections = SECTIONS.filter((s) => s.group === "operacion");
   const configuracionSections = SECTIONS.filter((s) => s.group === "configuracion");
 
@@ -148,6 +149,23 @@ function AdministracionContent() {
 
                 {isEditing && (
                   <div className="space-y-4 border-t border-neutral-100 px-4 py-4">
+                    <div>
+                      <p className="mb-2 text-xs font-semibold uppercase text-neutral-500">
+                        General
+                      </p>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {generalSections.map((s) => (
+                          <label key={s.key} className="flex items-center gap-2 text-sm text-neutral-700">
+                            <input
+                              type="checkbox"
+                              checked={draft.has(s.key)}
+                              onChange={() => toggleDraftSection(s.key)}
+                            />
+                            <span>{s.icon} {s.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                     <div>
                       <p className="mb-2 text-xs font-semibold uppercase text-neutral-500">
                         Operación

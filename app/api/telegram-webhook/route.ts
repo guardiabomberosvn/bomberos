@@ -38,7 +38,27 @@ async function editMessage(chatId: number, messageId: number, text: string) {
   });
 }
 
+// ARREGLO DE SEGURIDAD: sin esto, cualquiera podía mandarle un POST fabricado
+// a esta URL simulando una respuesta de Telegram (ej: marcar "acudo" en
+// nombre de otra persona) sin necesidad de tocar el bot real. Telegram
+// permite configurar un "secret_token" al registrar el webhook, que manda
+// de vuelta en este header en cada request real — si no coincide, no es de
+// Telegram. Queda opcional (si TELEGRAM_WEBHOOK_SECRET no está seteada, no
+// se corta nada) para no romper el webhook actual hasta que se configure del
+// lado de Telegram — ver supabase/README o el mensaje del chat para el paso
+// de setWebhook con secret_token.
+function isValidTelegramRequest(req: NextRequest) {
+  const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!expected) return true;
+  const received = req.headers.get("x-telegram-bot-api-secret-token");
+  return received === expected;
+}
+
 export async function POST(req: NextRequest) {
+  if (!isValidTelegramRequest(req)) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   const update = await req.json();
   const callback = update.callback_query;

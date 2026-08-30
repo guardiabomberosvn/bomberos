@@ -14,8 +14,10 @@ interface NavItem {
   icon: string;
 }
 
+// Dashboard ahora también se puede restringir por persona (grupo "general"
+// en lib/permissions.ts), así que sale de acá y se arma dinámico como el
+// resto. Estos 4 quedan siempre visibles para cualquiera con sesión activa.
 const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: "🏠" },
   { href: "/emergencias", label: "Emergencias", icon: "🚨" },
   { href: "/asistencia", label: "Mi asistencia", icon: "🕐" },
   { href: "/escanear", label: "Escanear QR", icon: "📷" },
@@ -26,10 +28,14 @@ const ACCOUNT_NAV_ITEMS: NavItem[] = [
   { href: "/vincular-telegram", label: "Alertas por Telegram", icon: "✈️" },
 ];
 
-// Las secciones de "Operación" y "Configuración" ya no son fijas por rol:
-// se arman según lo que cada usuario tiene habilitado (lib/permissions.ts),
-// para que el menú solo muestre lo que esa persona puede abrir.
-function navItemsForGroup(profile: Profile | null, group: "operacion" | "configuracion"): NavItem[] {
+// Las secciones de "Dashboard", "Operación" y "Configuración" ya no son
+// fijas por rol: se arman según lo que cada usuario tiene habilitado
+// (lib/permissions.ts), para que el menú solo muestre lo que esa persona
+// puede abrir.
+function navItemsForGroup(
+  profile: Profile | null,
+  group: "general" | "operacion" | "configuracion"
+): NavItem[] {
   if (!profile) return [];
   return SECTIONS.filter((s) => s.group === group && hasSectionAccess(profile, s.key)).map((s) => ({
     href: s.href,
@@ -255,7 +261,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isAdmin = profile?.role === "admin";
 
-  const primaryItems = [...NAV_ITEMS];
+  const primaryItems = [...navItemsForGroup(profile, "general"), ...NAV_ITEMS];
   const operationItems = navItemsForGroup(profile, "operacion");
   const adminItems = navItemsForGroup(profile, "configuracion");
   if (isAdmin) {

@@ -291,7 +291,7 @@ function StatCard({
 
 export default function DashboardPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute section="dashboard">
       <AppShell>
         <DashboardContent />
       </AppShell>

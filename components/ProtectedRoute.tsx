@@ -39,7 +39,11 @@ export function ProtectedRoute({
       return;
     }
     if (profile && !allowed) {
-      router.replace("/dashboard");
+      // "/asistencia" nunca se puede restringir (no forma parte del
+      // sistema de permisos por sección), así que sirve de destino seguro
+      // para cualquiera sin importar qué le hayan restringido — incluido
+      // Dashboard, que ahora también se puede restringir.
+      router.replace("/asistencia");
     }
   }, [loading, session, profile, allowed, router]);
 
