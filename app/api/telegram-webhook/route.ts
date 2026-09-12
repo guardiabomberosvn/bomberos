@@ -38,6 +38,16 @@ async function editMessage(chatId: number, messageId: number, text: string) {
   });
 }
 
+async function sendMessage(chatId: number, text: string) {
+  const token = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+  });
+}
+
 // ARREGLO DE SEGURIDAD: sin esto, cualquiera podía mandarle un POST fabricado
 // a esta URL simulando una respuesta de Telegram (ej: marcar "acudo" en
 // nombre de otra persona) sin necesidad de tocar el bot real. Telegram
@@ -54,92 +64,8 @@ function isValidTelegramRequest(req: NextRequest) {
   return received === expected;
 }
 
-export async function POST(req: NextRequest) {
-  if (!isValidTelegramRequest(req)) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
-
-  const supabaseAdmin = getSupabaseAdmin();
-  const update = await req.json();
-  const callback = update.callback_query;
-
-  // Solo nos interesan los toques de botón (callback_query). Otros mensajes
-  // al bot (ej: /start, o el código de vinculación) los ignoramos acá.
-  if (!callback) {
-    return NextResponse.json({ ok: true });
-  }
-
-  const chatId: number = callback.message.chat.id;
-  const messageId: number = callback.message.message_id;
-  const data: string = callback.data ?? "";
-  const [action, emergencyId] = data.split(":");
-
-  if (!["acudo", "no_acudo"].includes(action) || !emergencyId) {
-    await answerCallback(callback.id, "Botón no reconocido");
-    return NextResponse.json({ ok: true });
-  }
-
-  // Buscar qué perfil tiene este chat_id vinculado.
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("id, full_name, organization_id")
-    .eq("telegram_chat_id", String(chatId))
-    .maybeSingle();
-
-  if (!profile) {
-    await answerCallback(
-      callback.id,
-      "Tu cuenta no está vinculada. Abrí la app y volvé a vincular Telegram."
-    );
-    return NextResponse.json({ ok: true });
-  }
-
-  // Verificar que la emergencia siga activa y sea de la misma organización.
-  const { data: emergency } = await supabaseAdmin
-    .from("emergencies")
-    .select("id, title, status, organization_id")
-    .eq("id", emergencyId)
-    .maybeSingle();
-
-  if (!emergency || emergency.organization_id !== profile.organization_id) {
-    await answerCallback(callback.id, "Emergencia no encontrada.");
-    return NextResponse.json({ ok: true });
-  }
-
-  if (emergency.status !== "activa") {
-    await answerCallback(callback.id, "Esta alerta ya no está activa.");
-    await editMessage(
-      chatId,
-      messageId,
-      `🚨 <b>${emergency.title}</b>\n\n(Esta alerta ya fue cerrada, tu respuesta no se registró.)`
-    );
-    return NextResponse.json({ ok: true });
-  }
-
-  const { error: upsertError } = await supabaseAdmin
-    .from("emergency_responses")
-    .upsert(
-      {
-        emergency_id: emergencyId,
-        profile_id: profile.id,
-        response: action,
-        responded_at: new Date().toISOString(),
-      },
-      { onConflict: "emergency_id,profile_id" }
-    );
-
-  if (upsertError) {
-    await answerCallback(callback.id, "Error al guardar tu respuesta.");
-    return NextResponse.json({ ok: true });
-  }
-
-  const label = action === "acudo" ? "✅ ACUDO" : "❌ NO ACUDO";
-  await answerCallback(callback.id, `Registrado: ${label}`);
-  await editMessage(
-    chatId,
-    messageId,
-    `🚨 <b>${emergency.title}</b>\n\nTu respuesta: <b>${label}</b>`
-  );
-
-  return NextResponse.json({ ok: true });
-}
+// Vincula el chat de Telegram de quien mandó el mensaje con su perfil, si el
+// texto que mandó coincide con un código de vinculación pendiente y todavía
+// vigente (ver /vincular-telegram). Antes esto se resolvía desde el celular
+// del admin usando "getUpdates", lo que obligaba a apagar el webhook cada vez
+// (Telegram no deja usar getUpdates y webhook
