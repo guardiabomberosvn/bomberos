@@ -35,19 +35,21 @@ export interface SectionDef {
   label: string;
   icon: string;
   href: string;
-  group: "general" | "operacion" | "configuracion";
+  group: "general" | "operacion" | "libroGuardia" | "configuracion";
   legacyRoles: Role[];
 }
 
 export const SECTIONS: SectionDef[] = [
-  { key: "dashboard", label: "Dashboard", icon: "🏠", href: "/dashboard", group: "general", legacyRoles: ["admin", "guardia", "bombero"] },
-  { key: "asistencia_general", label: "Asistencia (todos)", icon: "📋", href: "/asistencia-general", group: "operacion", legacyRoles: ["admin", "guardia"] },
-  { key: "qr_consola", label: "QR consola", icon: "🖥️", href: "/qr-consola", group: "operacion", legacyRoles: ["admin", "guardia"] },
-  { key: "libro_guardia", label: "Libro de Guardia", icon: "📖", href: "/libro-guardia", group: "operacion", legacyRoles: ["admin", "guardia"] },
+  { key: "dashboard", label: "Inicio", icon: "🏠", href: "/dashboard", group: "general", legacyRoles: ["admin", "guardia", "bombero"] },
+  // Estas 4 quedan agrupadas juntas bajo un mismo menú "Libro de guardia"
+  // (antes estaban mezcladas dentro de "Operación").
+  { key: "asistencia_general", label: "Asistencia (todos)", icon: "📋", href: "/asistencia-general", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
+  { key: "qr_consola", label: "QR de asistencia", icon: "🖥️", href: "/qr-consola", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
+  { key: "libro_guardia", label: "Libro de Guardia", icon: "📖", href: "/libro-guardia", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
+  { key: "stock", label: "Stock", icon: "📦", href: "/stock", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
   { key: "flota", label: "Flota", icon: "🚒", href: "/flota", group: "operacion", legacyRoles: ["admin", "guardia"] },
   { key: "combustible", label: "Combustible", icon: "⛽", href: "/combustible", group: "operacion", legacyRoles: ["admin", "guardia"] },
   { key: "mantenimiento", label: "Mantenimiento", icon: "🔧", href: "/mantenimiento", group: "operacion", legacyRoles: ["admin", "guardia"] },
-  { key: "stock", label: "Stock", icon: "📦", href: "/stock", group: "operacion", legacyRoles: ["admin", "guardia"] },
   // Personal: solo admin y guardia lo ven por defecto (antes también lo
   // veían los bomberos). Un admin puede seguir dándoselo puntualmente a
   // alguien desde Administración.
