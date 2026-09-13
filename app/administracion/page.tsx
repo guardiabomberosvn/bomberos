@@ -50,6 +50,11 @@ function AdministracionContent() {
     });
   };
 
+  // Atajos para arrancar de cero: destildar todo (y a partir de ahí ir
+  // marcando a mano solo lo que esa persona necesita) o marcar todo de una.
+  const clearAllDraft = () => setDraft(new Set());
+  const selectAllDraft = () => setDraft(new Set(SECTIONS.map((s) => s.key)));
+
   const saveDraft = async () => {
     if (!editingId) return;
     setSaving(true);
@@ -83,6 +88,7 @@ function AdministracionContent() {
   };
 
   const generalSections = SECTIONS.filter((s) => s.group === "general");
+  const guardiaSections = SECTIONS.filter((s) => s.group === "libroGuardia");
   const operacionSections = SECTIONS.filter((s) => s.group === "operacion");
   const configuracionSections = SECTIONS.filter((s) => s.group === "configuracion");
 
@@ -149,12 +155,45 @@ function AdministracionContent() {
 
                 {isEditing && (
                   <div className="space-y-4 border-t border-neutral-100 px-4 py-4">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={clearAllDraft}
+                        className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100"
+                      >
+                        Destildar todo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={selectAllDraft}
+                        className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100"
+                      >
+                        Marcar todo
+                      </button>
+                    </div>
                     <div>
                       <p className="mb-2 text-xs font-semibold uppercase text-neutral-500">
                         General
                       </p>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {generalSections.map((s) => (
+                          <label key={s.key} className="flex items-center gap-2 text-sm text-neutral-700">
+                            <input
+                              type="checkbox"
+                              checked={draft.has(s.key)}
+                              onChange={() => toggleDraftSection(s.key)}
+                            />
+                            <span>{s.icon} {s.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="mb-2 text-xs font-semibold uppercase text-neutral-500">
+                        Libro de guardia
+                      </p>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {guardiaSections.map((s) => (
                           <label key={s.key} className="flex items-center gap-2 text-sm text-neutral-700">
                             <input
                               type="checkbox"
