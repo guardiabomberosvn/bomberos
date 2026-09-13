@@ -23,7 +23,13 @@ async function getCallerRole(request: NextRequest) {
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!supabaseUrl || !supabaseKey) return null;
 
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  // OJO: hay que pasar el token también como header Authorization al crear
+  // el cliente. Sin esto, la consulta de abajo a "profiles" viaja como
+  // anónima (RLS no reconoce quién sos) y siempre devuelve vacío, aunque
+  // seas admin — por eso antes esto tiraba "No autorizado" para cualquiera.
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) return null;
 
