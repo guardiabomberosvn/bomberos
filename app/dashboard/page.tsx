@@ -137,7 +137,7 @@ function DashboardContent() {
     <div className="space-y-7">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-ink-900">
-          Dashboard
+          Inicio
         </h1>
         <p className="mt-0.5 text-sm text-ink-400">
           Vista general del cuartel en tiempo real

@@ -20,3 +20,6 @@ npm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# notas/salidas internas de Claude — no forman parte del sitio
+/Claude outputs/
