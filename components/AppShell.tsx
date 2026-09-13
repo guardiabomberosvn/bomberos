@@ -14,13 +14,12 @@ interface NavItem {
   icon: string;
 }
 
-// Dashboard ahora también se puede restringir por persona (grupo "general"
-// en lib/permissions.ts), así que sale de acá y se arma dinámico como el
-// resto. Estos 4 quedan siempre visibles para cualquiera con sesión activa.
+// Dashboard, Mi asistencia y Escanear QR ahora también se pueden restringir
+// por persona (grupo "general" en lib/permissions.ts), así que salen de acá
+// y se arman dinámicos como el resto. Estos 2 quedan siempre visibles para
+// cualquiera con sesión activa.
 const NAV_ITEMS: NavItem[] = [
   { href: "/emergencias", label: "Emergencias", icon: "🚨" },
-  { href: "/asistencia", label: "Mi asistencia", icon: "🕐" },
-  { href: "/escanear", label: "Escanear QR", icon: "📷" },
   { href: "/hallazgos", label: "Hallazgos", icon: "🚧" },
 ];
 

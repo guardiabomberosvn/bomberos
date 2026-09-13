@@ -246,7 +246,7 @@ function EscanearContent() {
 
 export default function EscanearPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute section="escanear">
       <AppShell>
         <EscanearContent />
       </AppShell>

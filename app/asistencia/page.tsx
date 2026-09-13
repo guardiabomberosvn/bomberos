@@ -322,7 +322,7 @@ function AsistenciaContent() {
 
 export default function AsistenciaPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute section="asistencia">
       <AppShell>
         <AsistenciaContent />
       </AppShell>

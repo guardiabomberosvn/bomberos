@@ -19,6 +19,8 @@ import type { Profile, Role } from "@/lib/types";
 
 export type SectionKey =
   | "dashboard"
+  | "asistencia"
+  | "escanear"
   | "asistencia_general"
   | "qr_consola"
   | "libro_guardia"
@@ -41,6 +43,11 @@ export interface SectionDef {
 
 export const SECTIONS: SectionDef[] = [
   { key: "dashboard", label: "Inicio", icon: "🏠", href: "/dashboard", group: "general", legacyRoles: ["admin", "guardia", "bombero"] },
+  // "Mi asistencia" y "Escanear QR" antes estaban fijos para cualquiera con
+  // sesión (no eran configurables). Ahora un admin puede sacárselos a
+  // alguien puntual igual que cualquier otra sección.
+  { key: "asistencia", label: "Mi asistencia", icon: "🕐", href: "/asistencia", group: "general", legacyRoles: ["admin", "guardia", "bombero"] },
+  { key: "escanear", label: "Escanear QR", icon: "📷", href: "/escanear", group: "general", legacyRoles: ["admin", "guardia", "bombero"] },
   // Estas 4 quedan agrupadas juntas bajo un mismo menú "Libro de guardia"
   // (antes estaban mezcladas dentro de "Operación").
   { key: "asistencia_general", label: "Asistencia (todos)", icon: "📋", href: "/asistencia-general", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
