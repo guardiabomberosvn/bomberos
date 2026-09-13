@@ -48,7 +48,7 @@ export const SECTIONS: SectionDef[] = [
   { key: "libro_guardia", label: "Libro de Guardia", icon: "📖", href: "/libro-guardia", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
   { key: "stock", label: "Stock", icon: "📦", href: "/stock", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
   { key: "flota", label: "Flota", icon: "🚒", href: "/flota", group: "operacion", legacyRoles: ["admin", "guardia"] },
-  { key: "combustible", label: "Combustible", icon: "⛽", href: "/combustible", group: "operacion", legacyRoles: ["admin", "guardia"] },
+  { key: "combustible", label: "Combustible", icon: "⛽", href: "/combustible", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
   { key: "mantenimiento", label: "Mantenimiento", icon: "🔧", href: "/mantenimiento", group: "operacion", legacyRoles: ["admin", "guardia"] },
   // Personal: solo admin y guardia lo ven por defecto (antes también lo
   // veían los bomberos). Un admin puede seguir dándoselo puntualmente a
