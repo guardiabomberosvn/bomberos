@@ -146,8 +146,14 @@ export interface GuardShift {
   id: string;
   organization_id: string;
   opened_by: string;
+  // Nombre y apellido escrito a mano por quien abrió/cerró el turno. Hace
+  // falta porque la PC donde se toma el turno usa un usuario fijo del
+  // cuartel (compartido entre todos), no la cuenta personal de cada
+  // bombero — así queda registrado quién estuvo realmente de guardia.
+  opened_by_name: string | null;
   opened_at: string;
   closed_by: string | null;
+  closed_by_name: string | null;
   closed_at: string | null;
   notes: string | null;
 }
