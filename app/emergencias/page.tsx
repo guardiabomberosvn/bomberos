@@ -178,6 +178,10 @@ function EmergenciasContent() {
     exportToExcel(data, "emergencias", "Emergencias");
   };
 
+  const handleOpenMaps = (address: string) => {
+    window.open(googleMapsSearchUrl(address), "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div className="space-y-6">
       <EmergencySiren emergencies={activeEmergencies} myProfileId={profile?.id} />
@@ -265,14 +269,13 @@ function EmergenciasContent() {
                     {em.address && (
                       <p className="text-sm text-neutral-700">
                         {em.address}{" "}
-                        
-                          href={googleMapsSearchUrl(em.address)}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => handleOpenMaps(em.address as string)}
                           className="font-medium text-brand hover:underline"
                         >
                           🗺️ Ver en Maps ↗
-                        </a>
+                        </button>
                       </p>
                     )}
                     {em.notes && (
