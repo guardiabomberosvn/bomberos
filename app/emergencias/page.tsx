@@ -181,7 +181,7 @@ function EmergenciasContent() {
   return (
     <div className="space-y-6">
       <EmergencySiren emergencies={activeEmergencies} myProfileId={profile?.id} />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-neutral-900">Emergencias</h1>
         {isAdmin && (
           <button
@@ -265,7 +265,7 @@ function EmergenciasContent() {
                     {em.address && (
                       <p className="text-sm text-neutral-700">
                         {em.address}{" "}
-                        <a
+                        
                           href={googleMapsSearchUrl(em.address)}
                           target="_blank"
                           rel="noopener noreferrer"
