@@ -78,6 +78,12 @@ function TurnoTab({ myId }: { myId: string }) {
   const [working, setWorking] = useState(false);
   const [showCloseForm, setShowCloseForm] = useState(false);
   const [closeNotes, setCloseNotes] = useState("");
+  // La PC donde se toma el turno usa un usuario fijo del cuartel (compartido
+  // entre todos los guardias), no la cuenta personal de cada bombero — por
+  // eso hace falta este campo: para que quede registrado quién estuvo
+  // realmente de guardia, más allá de con qué cuenta se cargó.
+  const [openedByName, setOpenedByName] = useState("");
+  const [closedByName, setClosedByName] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -123,6 +129,10 @@ function TurnoTab({ myId }: { myId: string }) {
   };
 
   const handleOpen = async () => {
+    if (!openedByName.trim()) {
+      setError("Escribí el nombre y apellido de quien toma la guardia.");
+      return;
+    }
     setError(null);
     setWorking(true);
 
@@ -135,6 +145,7 @@ function TurnoTab({ myId }: { myId: string }) {
     const { error: insertError } = await supabase.from("guard_shifts").insert({
       organization_id: myProfile?.organization_id,
       opened_by: myId,
+      opened_by_name: openedByName.trim(),
     });
 
     setWorking(false);
@@ -146,11 +157,16 @@ function TurnoTab({ myId }: { myId: string }) {
       );
       return;
     }
+    setOpenedByName("");
     load();
   };
 
   const handleClose = async () => {
     if (!openShift) return;
+    if (!closedByName.trim()) {
+      setError("Escribí el nombre y apellido de quien entrega la guardia.");
+      return;
+    }
     setError(null);
     setWorking(true);
 
@@ -158,6 +174,7 @@ function TurnoTab({ myId }: { myId: string }) {
       .from("guard_shifts")
       .update({
         closed_by: myId,
+        closed_by_name: closedByName.trim(),
         closed_at: new Date().toISOString(),
         notes: closeNotes.trim() || null,
       })
@@ -170,6 +187,7 @@ function TurnoTab({ myId }: { myId: string }) {
     }
     setShowCloseForm(false);
     setCloseNotes("");
+    setClosedByName("");
     load();
   };
 
@@ -201,7 +219,9 @@ function TurnoTab({ myId }: { myId: string }) {
           <p className="text-xs font-semibold uppercase tracking-wide text-brand-dark">
             Turno abierto
           </p>
-          <p className="mt-1 text-lg font-semibold text-neutral-900">{nameOf(openShift.opened_by)}</p>
+          <p className="mt-1 text-lg font-semibold text-neutral-900">
+            {openShift.opened_by_name || nameOf(openShift.opened_by)}
+          </p>
           <p className="text-sm text-neutral-600">
             Desde las {new Date(openShift.opened_at).toLocaleString("es-AR")} · {formatElapsed(openShift.opened_at)} en curso
           </p>
@@ -215,6 +235,18 @@ function TurnoTab({ myId }: { myId: string }) {
             </button>
           ) : (
             <div className="mt-3 space-y-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-neutral-600">
+                  Nombre y apellido de quien entrega la guardia
+                </label>
+                <input
+                  type="text"
+                  value={closedByName}
+                  onChange={(e) => setClosedByName(e.target.value)}
+                  placeholder="Nombre y apellido"
+                  className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm"
+                />
+              </div>
               <textarea
                 value={closeNotes}
                 onChange={(e) => setCloseNotes(e.target.value)}
@@ -243,6 +275,18 @@ function TurnoTab({ myId }: { myId: string }) {
       ) : (
         <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-5 text-center">
           <p className="text-sm text-neutral-600">No hay ningún turno abierto en este momento.</p>
+          <div className="mx-auto mt-3 max-w-xs text-left">
+            <label className="mb-1 block text-xs font-medium text-neutral-600">
+              Nombre y apellido de quien toma la guardia
+            </label>
+            <input
+              type="text"
+              value={openedByName}
+              onChange={(e) => setOpenedByName(e.target.value)}
+              placeholder="Nombre y apellido"
+              className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </div>
           <button
             onClick={handleOpen}
             disabled={working}
@@ -263,9 +307,11 @@ function TurnoTab({ myId }: { myId: string }) {
               <li key={s.id} className="flex items-start justify-between gap-2 px-4 py-3 text-sm">
                 <div>
                   <p className="font-medium text-neutral-800">
-                    {nameOf(s.opened_by)}
-                    {s.closed_by && s.closed_by !== s.opened_by
-                      ? ` → cerrado por ${nameOf(s.closed_by)}`
+                    {s.opened_by_name || nameOf(s.opened_by)}
+                    {s.closed_at &&
+                    (s.closed_by_name || nameOf(s.closed_by ?? "")) !==
+                      (s.opened_by_name || nameOf(s.opened_by))
+                      ? ` → cerrado por ${s.closed_by_name || nameOf(s.closed_by ?? "")}`
                       : ""}
                   </p>
                   <p className="text-xs text-neutral-500">
