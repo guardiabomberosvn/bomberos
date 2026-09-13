@@ -4,17 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
-import { StatsBarChart } from "@/components/StatsBarChart";
 import { supabase } from "@/lib/supabase";
 import { exportMultiSheetExcel } from "@/lib/export";
 import type { StockItem, StockWithdrawal } from "@/lib/types";
 
 type SubTab = "stock" | "retiros";
-
-const MESES = [
-  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
-  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
-];
 
 function StockContent() {
   const { profile } = useAuth();
@@ -23,7 +17,6 @@ function StockContent() {
   const [withdrawals, setWithdrawals] = useState<StockWithdrawal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showStats, setShowStats] = useState(true);
 
   // --- form: nuevo insumo ---
   const [showItemForm, setShowItemForm] = useState(false);
@@ -234,30 +227,6 @@ function StockContent() {
 
   const lowStock = items.filter((i) => i.min_stock != null && currentStock(i) <= i.min_stock);
 
-  const currentYear = new Date().getFullYear();
-  const stats = useMemo(() => {
-    const thisYear = withdrawals.filter(
-      (w) => new Date(w.withdrawn_at).getFullYear() === currentYear
-    );
-    const qtyByItem = new Map<string, number>();
-    for (const w of thisYear) {
-      qtyByItem.set(w.item_id, (qtyByItem.get(w.item_id) ?? 0) + Number(w.quantity));
-    }
-    const topItems = Array.from(qtyByItem.entries())
-      .map(([id, value]) => ({ label: itemName_(id), value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8);
-
-    const byMonth = MESES.map((label, idx) => ({
-      label,
-      value: thisYear
-        .filter((w) => new Date(w.withdrawn_at).getMonth() === idx)
-        .reduce((sum, w) => sum + Number(w.quantity), 0),
-    }));
-
-    return { totalWithdrawals: thisYear.length, topItems, byMonth };
-  }, [withdrawals, items, currentYear]);
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -288,35 +257,6 @@ function StockContent() {
           </ul>
         </div>
       )}
-
-      <div className="rounded-xl border border-neutral-200 bg-white">
-        <button
-          onClick={() => setShowStats((s) => !s)}
-          className="flex w-full items-center justify-between px-4 py-3 text-left"
-        >
-          <p className="text-sm font-semibold text-neutral-800">
-            📊 Estadísticas {currentYear} · {stats.totalWithdrawals} retiro
-            {stats.totalWithdrawals === 1 ? "" : "s"}
-          </p>
-          <span className="text-xs text-neutral-400">{showStats ? "Ocultar" : "Mostrar"}</span>
-        </button>
-        {showStats && (
-          <div className="grid grid-cols-1 gap-6 border-t border-neutral-100 px-4 py-4 lg:grid-cols-2">
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase text-neutral-500">
-                Más retirados (cantidad)
-              </p>
-              <StatsBarChart data={stats.topItems} />
-            </div>
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase text-neutral-500">
-                Cantidad retirada por mes
-              </p>
-              <StatsBarChart data={stats.byMonth} color="bg-orange-500" />
-            </div>
-          </div>
-        )}
-      </div>
 
       <div className="flex gap-1 border-b border-neutral-200">
         {(
