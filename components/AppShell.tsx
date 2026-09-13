@@ -28,13 +28,13 @@ const ACCOUNT_NAV_ITEMS: NavItem[] = [
   { href: "/vincular-telegram", label: "Alertas por Telegram", icon: "✈️" },
 ];
 
-// Las secciones de "Dashboard", "Operación" y "Configuración" ya no son
-// fijas por rol: se arman según lo que cada usuario tiene habilitado
-// (lib/permissions.ts), para que el menú solo muestre lo que esa persona
-// puede abrir.
+// Las secciones de "Dashboard", "Libro de guardia", "Operación" y
+// "Configuración" ya no son fijas por rol: se arman según lo que cada
+// usuario tiene habilitado (lib/permissions.ts), para que el menú solo
+// muestre lo que esa persona puede abrir.
 function navItemsForGroup(
   profile: Profile | null,
-  group: "general" | "operacion" | "configuracion"
+  group: "general" | "libroGuardia" | "operacion" | "configuracion"
 ): NavItem[] {
   if (!profile) return [];
   return SECTIONS.filter((s) => s.group === group && hasSectionAccess(profile, s.key)).map((s) => ({
@@ -262,14 +262,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isAdmin = profile?.role === "admin";
 
   const primaryItems = [...navItemsForGroup(profile, "general"), ...NAV_ITEMS];
+  const guardiaItems = navItemsForGroup(profile, "libroGuardia");
   const operationItems = navItemsForGroup(profile, "operacion");
   const adminItems = navItemsForGroup(profile, "configuracion");
   if (isAdmin) {
     adminItems.push({ href: "/administracion", label: "Administración", icon: "🛡️" });
+    adminItems.push({ href: "/integraciones", label: "Integraciones", icon: "🔌" });
   }
 
   const sections: NavSection[] = [
     { title: null, items: primaryItems },
+    { title: "Libro de guardia", items: guardiaItems },
     { title: "Operación", items: operationItems },
     { title: "Configuración", items: adminItems },
     { title: "Mi cuenta", items: ACCOUNT_NAV_ITEMS },
@@ -324,9 +327,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="mx-auto max-w-6xl px-4 pb-2.5 sm:px-6">
-          {/* Barra horizontal — solo desde tablet/escritorio (md y más) */}
-          <nav className="hidden items-center gap-1 md:flex">
-            <div className="no-scrollbar flex flex-1 gap-1 overflow-x-auto">
+          {/* Barra horizontal — solo desde tablet/escritorio (md y más).
+              Con flex-wrap: si no entran todos los botones en una fila,
+              pasan a una segunda fila en vez de quedar recortados o
+              escondidos detrás de un scroll invisible. */}
+          <nav className="hidden flex-wrap items-center gap-1.5 md:flex">
+            <div className="flex flex-wrap items-center gap-1">
               {primaryItems.map((item) => (
                 <Link key={item.href} href={item.href} className={linkClass(item.href)}>
                   <span>{item.icon}</span>
@@ -335,21 +341,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ))}
             </div>
 
-            <NavDropdown
-              label="Operación"
-              items={operationItems}
-              active={operationItems.some((i) => i.href === pathname)}
-            />
-            <NavDropdown
-              label="Configuración"
-              items={adminItems}
-              active={adminItems.some((i) => i.href === pathname)}
-            />
-            <NavDropdown
-              label="Mi cuenta"
-              items={ACCOUNT_NAV_ITEMS}
-              active={ACCOUNT_NAV_ITEMS.some((i) => i.href === pathname)}
-            />
+            <div className="ml-auto flex flex-wrap items-center gap-1">
+              <NavDropdown
+                label="Libro de guardia"
+                items={guardiaItems}
+                active={guardiaItems.some((i) => i.href === pathname)}
+              />
+              <NavDropdown
+                label="Operación"
+                items={operationItems}
+                active={operationItems.some((i) => i.href === pathname)}
+              />
+              <NavDropdown
+                label="Configuración"
+                items={adminItems}
+                active={adminItems.some((i) => i.href === pathname)}
+              />
+              <NavDropdown
+                label="Mi cuenta"
+                items={ACCOUNT_NAV_ITEMS}
+                active={ACCOUNT_NAV_ITEMS.some((i) => i.href === pathname)}
+              />
+            </div>
           </nav>
 
           {/* Botón de menú — solo en celular (debajo de md) */}
