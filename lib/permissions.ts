@@ -30,7 +30,8 @@ export type SectionKey =
   | "stock"
   | "personal"
   | "grupos"
-  | "motivos";
+  | "motivos"
+  | "notificaciones";
 
 export interface SectionDef {
   key: SectionKey;
@@ -48,6 +49,12 @@ export const SECTIONS: SectionDef[] = [
   // alguien puntual igual que cualquier otra sección.
   { key: "asistencia", label: "Mi asistencia", icon: "🕐", href: "/asistencia", group: "general", legacyRoles: ["admin", "guardia", "bombero"] },
   { key: "escanear", label: "Escanear QR", icon: "📷", href: "/escanear", group: "general", legacyRoles: ["admin", "guardia", "bombero"] },
+  // La campanita de notificaciones (stock, entradas/salidas, disponibilidad,
+  // hallazgos, mantenimiento) tiene su propio botón en el encabezado, no un
+  // link de menú común — ver la exclusión en AppShell.navItemsForGroup. Por
+  // defecto es para admin/guardia, pero se puede dar o sacar por persona
+  // igual que cualquier otra sección (incluso a un bombero puntual).
+  { key: "notificaciones", label: "Notificaciones", icon: "🔔", href: "/notificaciones", group: "general", legacyRoles: ["admin", "guardia"] },
   // Estas 4 quedan agrupadas juntas bajo un mismo menú "Libro de guardia"
   // (antes estaban mezcladas dentro de "Operación").
   { key: "asistencia_general", label: "Asistencia (todos)", icon: "📋", href: "/asistencia-general", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },

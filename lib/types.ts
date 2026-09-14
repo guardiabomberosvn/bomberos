@@ -44,6 +44,25 @@ export interface AttendanceReason {
   is_active: boolean;
 }
 
+export type NotificationType =
+  | "stock_retiro"
+  | "stock_bajo"
+  | "asistencia_checkin"
+  | "asistencia_checkout"
+  | "disponibilidad"
+  | "hallazgo"
+  | "mantenimiento";
+
+export interface Notification {
+  id: string;
+  organization_id: string;
+  type: NotificationType;
+  title: string;
+  body: string | null;
+  link: string | null;
+  created_at: string;
+}
+
 export interface Organization {
   id: string;
   name: string;

@@ -81,6 +81,22 @@ export async function notifyResponsible(responsibleProfile: Profile | undefined 
   await sendTelegramMessage(responsibleProfile.telegram_chat_id, message);
 }
 
+/**
+ * Agrega el aviso a la campanita de notificaciones (tabla "notifications").
+ * Se llama siempre justo después de un "claim" exitoso (el mismo update
+ * condicional que ya evita mandar el mensaje de Telegram duplicado), así
+ * que también queda deduplicado sin lógica extra acá.
+ */
+async function notifyInApp(organizationId: string, title: string, body?: string) {
+  await supabase.from("notifications").insert({
+    organization_id: organizationId,
+    type: "mantenimiento",
+    title,
+    body: body || null,
+    link: "/mantenimiento",
+  });
+}
+
 // Avisos fijos mientras la orden sigue "pendiente": 15 días antes, 1 semana
 // antes y 1 día antes (o ya vencido). Cada uno se manda una sola vez.
 type PendingCheckpoint = "15_dias" | "1_semana" | "1_dia";
@@ -155,6 +171,11 @@ export async function checkAndNotifyMaintenanceDueDates(
           `Fecha objetivo: ${r.target_date}\n` +
           `Revisalo en la app, sección Mantenimiento.`
       );
+      await notifyInApp(
+        organizationId,
+        "🔧 Mantenimiento en proceso — vence mañana",
+        `${r.work}${vehicle ? " — " + vehicle.name : ""}`
+      );
       continue;
     }
 
@@ -181,5 +202,10 @@ export async function checkAndNotifyMaintenanceDueDates(
       `Fecha objetivo: ${r.target_date}\n` +
       `Revisalo en la app, sección Mantenimiento.`;
     await notifyMaintenanceContacts(organizationId, message);
+    await notifyInApp(
+      organizationId,
+      `🔧 Mantenimiento ${label}`,
+      `${r.work}${vehicle ? " — " + vehicle.name : ""}`
+    );
   }
 }

@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { NotificationBell } from "@/components/NotificationBell";
 import { ROLE_LABELS, type Profile } from "@/lib/types";
 import { hasSectionAccess, SECTIONS } from "@/lib/permissions";
 
@@ -36,7 +37,11 @@ function navItemsForGroup(
   group: "general" | "libroGuardia" | "operacion" | "configuracion"
 ): NavItem[] {
   if (!profile) return [];
-  return SECTIONS.filter((s) => s.group === group && hasSectionAccess(profile, s.key)).map((s) => ({
+  return SECTIONS.filter(
+    // "notificaciones" tiene su propia campanita en el encabezado (ver más
+    // abajo), no un link de menú común — se excluye acá para no duplicarla.
+    (s) => s.group === group && s.key !== "notificaciones" && hasSectionAccess(profile, s.key)
+  ).map((s) => ({
     href: s.href,
     label: s.label,
     icon: s.icon,
@@ -304,6 +309,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {profile && (
             <div className="flex items-center gap-3">
+              {hasSectionAccess(profile, "notificaciones") && (
+                <NotificationBell profileId={profile.id} />
+              )}
               <div className="hidden text-right sm:block">
                 <p className="text-sm font-medium leading-tight text-ink-900">
                   {profile.full_name}
