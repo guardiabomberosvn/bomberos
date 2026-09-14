@@ -25,8 +25,10 @@ function StockContent() {
   const [itemInitialStock, setItemInitialStock] = useState("");
   const [itemMinStock, setItemMinStock] = useState("");
 
-  // --- edición de insumo (recargar stock / mínimo) ---
+  // --- edición de insumo (nombre, unidad, recargar stock / mínimo) ---
   const [editingItem, setEditingItem] = useState<StockItem | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editUnit, setEditUnit] = useState("");
   const [editInitialStock, setEditInitialStock] = useState("");
   const [editMinStock, setEditMinStock] = useState("");
 
@@ -111,16 +113,20 @@ function StockContent() {
   };
 
   const openEditItem = (item: StockItem) => {
+    setEditName(item.name);
+    setEditUnit(item.unit);
     setEditInitialStock(String(item.initial_stock));
     setEditMinStock(item.min_stock != null ? String(item.min_stock) : "");
     setEditingItem(item);
   };
 
   const confirmEditItem = async () => {
-    if (!editingItem) return;
+    if (!editingItem || !editName.trim()) return;
     const { error: updateError } = await supabase
       .from("stock_items")
       .update({
+        name: editName.trim(),
+        unit: editUnit.trim() || "unidades",
         initial_stock: editInitialStock ? Number(editInitialStock) : 0,
         min_stock: editMinStock ? Number(editMinStock) : null,
         updated_at: new Date().toISOString(),
@@ -537,11 +543,32 @@ function StockContent() {
             className="w-full max-w-sm rounded-xl bg-white p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="mb-1 text-lg font-semibold text-neutral-900">{editingItem.name}</h2>
+            <h2 className="mb-1 text-lg font-semibold text-neutral-900">Editar insumo</h2>
             <p className="mb-4 text-sm text-neutral-500">
-              Usá esto para recargar stock (subir el "inicial/cargado") o ajustar el mínimo.
+              Corregí el nombre o la unidad si te equivocaste al cargarlo, recargá el stock, o
+              ajustá el mínimo.
             </p>
             <div className="space-y-3">
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-neutral-700">
+                  Mercadería / insumo
+                </span>
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full rounded-md border border-neutral-300 px-3 py-2"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-neutral-700">
+                  Unidad (ej: unidades, litros, cajas)
+                </span>
+                <input
+                  value={editUnit}
+                  onChange={(e) => setEditUnit(e.target.value)}
+                  className="w-full rounded-md border border-neutral-300 px-3 py-2"
+                />
+              </label>
               <label className="block text-sm">
                 <span className="mb-1 block font-medium text-neutral-700">
                   Stock inicial/cargado
@@ -574,7 +601,8 @@ function StockContent() {
               </button>
               <button
                 onClick={confirmEditItem}
-                className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark"
+                disabled={!editName.trim()}
+                className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-60"
               >
                 Guardar
               </button>
