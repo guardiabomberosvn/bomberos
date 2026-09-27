@@ -20,6 +20,8 @@ function PersonalContent() {
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [reasonPromptFor, setReasonPromptFor] = useState<Profile | null>(null);
   const [selectedReasonId, setSelectedReasonId] = useState("");
+  const [deletingProfile, setDeletingProfile] = useState<Profile | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   const isAdmin = myProfile?.role === "admin";
   const canMarkForOthers = myProfile?.role === "admin";
@@ -104,6 +106,34 @@ function PersonalContent() {
 
     setMarkingId(null);
     setReasonPromptFor(null);
+    load();
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingProfile) return;
+    setError(null);
+    setDeleteSubmitting(true);
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+
+    const res = await fetch("/api/delete-user", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ userId: deletingProfile.id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setDeleteSubmitting(false);
+
+    if (!res.ok) {
+      setError(data.error ?? "No se pudo eliminar el usuario.");
+      return;
+    }
+
+    setDeletingProfile(null);
     load();
   };
 
@@ -192,6 +222,14 @@ function PersonalContent() {
                           Editar
                         </button>
                       )}
+                      {isAdmin && p.id !== myProfile?.id && (
+                        <button
+                          onClick={() => setDeletingProfile(p)}
+                          className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                        >
+                          Eliminar
+                        </button>
+                      )}
                       {canMarkForOthers && p.id !== myProfile?.id && (
                         <button
                           onClick={() => toggleAttendanceForOther(p)}
@@ -270,6 +308,45 @@ function PersonalContent() {
                 className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-60"
               >
                 Confirmar ingreso
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deletingProfile && (
+        <div
+          className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 px-4"
+          onClick={() => !deleteSubmitting && setDeletingProfile(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl bg-white p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="mb-1 text-lg font-semibold text-neutral-900">
+              Eliminar a {deletingProfile.full_name}
+            </h2>
+            <p className="mb-4 text-sm text-neutral-500">
+              Esto borra su cuenta para siempre: no va a poder volver a
+              iniciar sesión y pierde el acceso al sistema. Su historial
+              (asistencias, hallazgos, etc.) puede quedar afectado. Si solo
+              querés que deje de aparecer como personal activo, mejor usá
+              "Editar" → destildar "Personal activo" en vez de esto.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeletingProfile(null)}
+                disabled={deleteSubmitting}
+                className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleteSubmitting}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleteSubmitting ? "Eliminando…" : "Sí, eliminar definitivamente"}
               </button>
             </div>
           </div>
