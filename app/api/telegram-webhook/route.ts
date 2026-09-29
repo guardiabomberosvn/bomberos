@@ -38,16 +38,6 @@ async function editMessage(chatId: number, messageId: number, text: string) {
   });
 }
 
-async function sendMessage(chatId: number, text: string) {
-  const token = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN;
-  if (!token) return;
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
-  });
-}
-
 // ARREGLO DE SEGURIDAD: sin esto, cualquiera podía mandarle un POST fabricado
 // a esta URL simulando una respuesta de Telegram (ej: marcar "acudo" en
 // nombre de otra persona) sin necesidad de tocar el bot real. Telegram
@@ -64,8 +54,100 @@ function isValidTelegramRequest(req: NextRequest) {
   return received === expected;
 }
 
-// Vincula el chat de Telegram de quien mandó el mensaje con su perfil, si el
-// texto que mandó coincide con un código de vinculación pendiente y todavía
-// vigente (ver /vincular-telegram). Antes esto se resolvía desde el celular
-// del admin usando "getUpdates", lo que obligaba a apagar el webhook cada vez
-// (Telegram no deja usar getUpdates y webhook
+// Este endpoint es lo único que Telegram sabe llamar cuando alguien toca un
+// botón (por ejemplo ✅ ACUDO / ❌ NO ACUDO en una convocatoria de
+// emergencia): le manda acá un POST con el "update". Si esta función no
+// existe (como pasó hasta ahora — el archivo se había quedado a medio
+// escribir), Next.js devuelve 405 "Method Not Allowed" para cualquier POST,
+// que es exactamente el error que veía Telegram en Integraciones.
+export async function POST(request: NextRequest) {
+  if (!isValidTelegramRequest(request)) {
+    // No confirmamos ni negamos nada para no dar pistas: simplemente se
+    // ignora como si el update nunca hubiera llegado.
+    return NextResponse.json({ ok: true });
+  }
+
+  const update = await request.json().catch(() => null);
+  if (!update) {
+    return NextResponse.json({ ok: true });
+  }
+
+  const supabase = getSupabaseAdmin();
+
+  // Respuesta a los botones ACUDO / NO ACUDO de una convocatoria de
+  // emergencia (ver DispatchModal, callback_data = "acudo:<id>" o
+  // "no_acudo:<id>").
+  if (update.callback_query) {
+    const callbackQuery = update.callback_query as {
+      id: string;
+      data?: string;
+      message?: { chat?: { id?: number }; message_id?: number; text?: string };
+    };
+
+    const data = callbackQuery.data ?? "";
+    const [action, emergencyId] = data.split(":");
+    const chatId = callbackQuery.message?.chat?.id;
+    const messageId = callbackQuery.message?.message_id;
+
+    if ((action === "acudo" || action === "no_acudo") && emergencyId && chatId) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .eq("telegram_chat_id", String(chatId))
+        .maybeSingle();
+
+      if (!profile) {
+        await answerCallback(
+          callbackQuery.id,
+          "Tu Telegram no está vinculado a ningún usuario del sistema."
+        );
+        return NextResponse.json({ ok: true });
+      }
+
+      const { error: upsertError } = await supabase
+        .from("emergency_responses")
+        .upsert(
+          {
+            emergency_id: emergencyId,
+            profile_id: profile.id,
+            response: action,
+            responded_at: new Date().toISOString(),
+          },
+          { onConflict: "emergency_id,profile_id" }
+        );
+
+      if (upsertError) {
+        await answerCallback(
+          callbackQuery.id,
+          "No se pudo registrar tu respuesta, probá de nuevo en un momento."
+        );
+        return NextResponse.json({ ok: true });
+      }
+
+      const label = action === "acudo" ? "✅ ACUDO" : "❌ NO ACUDO";
+      await answerCallback(callbackQuery.id, `Registrado: ${label}`);
+
+      if (messageId) {
+        const original = callbackQuery.message?.text ?? "";
+        await editMessage(
+          chatId,
+          messageId,
+          `${original}\n\n${label} — ${profile.full_name}`
+        );
+      }
+    } else {
+      // El botón ya no corresponde a nada que sepamos procesar (formato
+      // viejo o desconocido) — avisamos sin romper nada del lado de
+      // Telegram.
+      await answerCallback(callbackQuery.id, "No se pudo procesar esta respuesta.");
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  // Cualquier otro tipo de update (mensajes de texto, etc.) simplemente se
+  // reconoce con 200 para que Telegram no marque el webhook como roto. La
+  // vinculación de una cuenta con Telegram se sigue haciendo a mano desde
+  // /vincular-telegram (botón "Ya envié el código").
+  return NextResponse.json({ ok: true });
+}
