@@ -95,7 +95,13 @@ export function NotificationBell({ profileId }: { profileId: string }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-72 overflow-hidden rounded-xl border border-black/5 bg-white shadow-panel">
+        // En mobile la campanita queda cerca del avatar y el botón "Salir",
+        // así que no hay lugar a la derecha para un panel de 18rem sin que
+        // se corte por izquierda de la pantalla — por eso en mobile se
+        // ancla al viewport (fixed, con margen a los costados) en vez de al
+        // botón. A partir de "sm" (pantallas más anchas) vuelve al
+        // comportamiento normal, pegado a la campanita.
+        <div className="fixed inset-x-3 top-16 z-30 overflow-hidden rounded-xl border border-black/5 bg-white shadow-panel sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2 sm:w-72">
           <div className="flex items-center justify-between border-b border-neutral-100 px-3 py-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
               Notificaciones
