@@ -260,6 +260,14 @@ export interface Vehicle {
   status: VehicleStatus;
   km: number;
   is_active: boolean;
+  brand: string | null;
+  model: string | null;
+  license_plate: string | null;
+  chassis_number: string | null;
+  engine_number: string | null;
+  // Capacidad en litros (tanque de agua/espuma, combustible, etc.), si
+  // corresponde para ese tipo de unidad.
+  tank_liters: number | null;
 }
 
 export interface FuelLoad {
@@ -304,6 +312,13 @@ export interface MaintenanceRecord {
   status: MaintenanceStatus;
   cost: number | null;
   notes: string | null;
+  // Km del vehículo al momento de hacer la reparación (distinto de
+  // target_km, que es el km al que está programado el PRÓXIMO service).
+  repair_km: number | null;
+  // Proveedor / taller que hizo el trabajo.
+  provider: string | null;
+  // Persona (interna o externa) que efectivamente hizo la reparación.
+  performed_by: string | null;
   created_by: string;
   created_at: string;
   completed_at: string | null;

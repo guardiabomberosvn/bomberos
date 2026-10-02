@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
+import { EditVehicleModal } from "@/components/EditVehicleModal";
 import { supabase } from "@/lib/supabase";
 import type {
   FuelLoad,
@@ -44,6 +45,7 @@ function FlotaContent() {
   const [name, setName] = useState("");
   const [type, setType] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -207,6 +209,7 @@ function FlotaContent() {
       movementsCount: vehicleMovements.length,
       maintenancePending: vehicleMaintenance.filter((m) => m.status !== "completado").length,
       maintenanceDone: vehicleMaintenance.filter((m) => m.status === "completado").length,
+      maintenanceCost: vehicleMaintenance.reduce((sum, m) => sum + (m.cost ?? 0), 0),
       findingsPending: vehicleFindings.filter((f) => f.status === "pendiente").length,
     };
   };
@@ -269,6 +272,7 @@ function FlotaContent() {
                     <p className="font-semibold text-neutral-800">{v.name}</p>
                     <p className="text-xs text-neutral-500">
                       {v.type ?? "Sin tipo"} · {v.km.toLocaleString("es-AR")} km
+                      {v.license_plate ? ` · ${v.license_plate}` : ""}
                       {!v.is_active && " · Inactivo"}
                     </p>
                   </div>
@@ -323,11 +327,50 @@ function FlotaContent() {
                           🔧 Programar service
                         </Link>
                         <button
+                          onClick={() => setEditingVehicle(v)}
+                          className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                        >
+                          ✏️ Editar datos
+                        </button>
+                        <button
                           onClick={() => handleDeleteVehicle(v)}
                           className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
                         >
                           Eliminar
                         </button>
+                      </div>
+                    )}
+
+                    {(v.brand || v.model || v.chassis_number || v.engine_number || v.tank_liters != null) && (
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-lg bg-neutral-50 p-3 text-xs sm:grid-cols-3">
+                        {(v.brand || v.model) && (
+                          <div>
+                            <p className="text-neutral-500">Marca / Modelo</p>
+                            <p className="font-medium text-neutral-800">
+                              {[v.brand, v.model].filter(Boolean).join(" ") || "—"}
+                            </p>
+                          </div>
+                        )}
+                        {v.chassis_number && (
+                          <div>
+                            <p className="text-neutral-500">N° de chasis</p>
+                            <p className="font-medium text-neutral-800">{v.chassis_number}</p>
+                          </div>
+                        )}
+                        {v.engine_number && (
+                          <div>
+                            <p className="text-neutral-500">N° de motor</p>
+                            <p className="font-medium text-neutral-800">{v.engine_number}</p>
+                          </div>
+                        )}
+                        {v.tank_liters != null && (
+                          <div>
+                            <p className="text-neutral-500">Litros (capacidad)</p>
+                            <p className="font-medium text-neutral-800">
+                              {v.tank_liters.toLocaleString("es-AR")} L
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -356,6 +399,9 @@ function FlotaContent() {
                           </p>
                           <p className="text-xs text-neutral-500">
                             {summary.maintenanceDone} completado{summary.maintenanceDone === 1 ? "" : "s"}
+                            {summary.maintenanceCost > 0
+                              ? ` · $${summary.maintenanceCost.toLocaleString("es-AR")}`
+                              : ""}
                           </p>
                         </div>
                         <div>
@@ -398,6 +444,17 @@ function FlotaContent() {
             );
           })}
         </div>
+      )}
+
+      {editingVehicle && (
+        <EditVehicleModal
+          vehicle={editingVehicle}
+          onClose={() => setEditingVehicle(null)}
+          onSaved={() => {
+            setEditingVehicle(null);
+            load();
+          }}
+        />
       )}
     </div>
   );

@@ -7,6 +7,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { notifyMaintenanceContacts } from "@/lib/maintenance";
+import { EditFindingModal } from "@/components/EditFindingModal";
 import type { FindingPriority, MaintenanceFinding, Vehicle } from "@/lib/types";
 import { FINDING_PRIORITY_LABELS, FINDING_STATUS_LABELS } from "@/lib/types";
 
@@ -46,6 +47,7 @@ function HallazgosContent() {
   const [priority, setPriority] = useState<FindingPriority>("media");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [editingFinding, setEditingFinding] = useState<MaintenanceFinding | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -313,17 +315,37 @@ function HallazgosContent() {
                 </span>
               </div>
               {isStaff && (
-                <button
-                  onClick={() => handleDelete(f)}
-                  className="mt-3 rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
-                >
-                  Eliminar hallazgo
-                </button>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => setEditingFinding(f)}
+                    className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    onClick={() => handleDelete(f)}
+                    className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                  >
+                    Eliminar hallazgo
+                  </button>
+                </div>
               )}
             </div>
           ))
         )}
       </div>
+
+      {editingFinding && (
+        <EditFindingModal
+          finding={editingFinding}
+          vehicles={vehicles}
+          onClose={() => setEditingFinding(null)}
+          onSaved={() => {
+            setEditingFinding(null);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }

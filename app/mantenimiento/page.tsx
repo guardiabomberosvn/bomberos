@@ -7,7 +7,10 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { getMaintenanceAlertLevel, notifyResponsible } from "@/lib/maintenance";
+import { MaintenanceDetailModal } from "@/components/MaintenanceDetailModal";
+import { MaintenancePreviewModal } from "@/components/MaintenancePreviewModal";
 import type {
+  MaintenanceFinding,
   MaintenanceRecord,
   MaintenanceStatus,
   MaintenanceType,
@@ -34,6 +37,7 @@ function MantenimientoContent() {
   const [records, setRecords] = useState<MaintenanceRecord[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [personal, setPersonal] = useState<Profile[]>([]);
+  const [findings, setFindings] = useState<MaintenanceFinding[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -42,6 +46,10 @@ function MantenimientoContent() {
   const [work, setWork] = useState("");
   const [responsibleId, setResponsibleId] = useState("");
   const [targetDate, setTargetDate] = useState("");
+  const [targetKm, setTargetKm] = useState("");
+  const [cost, setCost] = useState("");
+  const [detailRecord, setDetailRecord] = useState<MaintenanceRecord | null>(null);
+  const [previewRecord, setPreviewRecord] = useState<MaintenanceRecord | null>(null);
 
   // Si venimos desde Flota con "Programar service", preseleccionamos el
   // vehículo y abrimos el formulario directo.
@@ -66,9 +74,14 @@ function MantenimientoContent() {
       .select("*")
       .eq("is_active", true)
       .order("full_name");
+    const { data: fd } = await supabase
+      .from("maintenance_findings")
+      .select("*")
+      .not("converted_maintenance_id", "is", null);
     setRecords((m as MaintenanceRecord[]) ?? []);
     setVehicles((v as Vehicle[]) ?? []);
     setPersonal((p as Profile[]) ?? []);
+    setFindings((fd as MaintenanceFinding[]) ?? []);
     setLoading(false);
   };
 
@@ -79,12 +92,25 @@ function MantenimientoContent() {
   const vehicleName = (id: string | null) =>
     id ? vehicles.find((v) => v.id === id)?.name ?? "—" : "—";
 
+  const findingFor = (recordId: string) =>
+    findings.find((f) => f.converted_maintenance_id === recordId) ?? null;
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!work.trim() || !profile) return;
     setError(null);
 
     const responsiblePerson = personal.find((p) => p.id === responsibleId);
+    const targetKmValue = targetKm.trim() ? Number(targetKm) : null;
+    const costValue = cost.trim() ? Number(cost) : null;
+    if (targetKm.trim() && Number.isNaN(targetKmValue)) {
+      setError("El km objetivo tiene que ser un número.");
+      return;
+    }
+    if (cost.trim() && Number.isNaN(costValue)) {
+      setError("El precio tiene que ser un número.");
+      return;
+    }
 
     const { error: insertError } = await supabase.from("maintenance_records").insert({
       organization_id: profile.organization_id,
@@ -94,6 +120,8 @@ function MantenimientoContent() {
       responsible_id: responsibleId || null,
       responsible: responsiblePerson?.full_name ?? null,
       target_date: targetDate || null,
+      target_km: targetKmValue,
+      cost: costValue,
       created_by: profile.id,
     });
 
@@ -110,6 +138,7 @@ function MantenimientoContent() {
         `🔧 <b>Se te asignó una orden de mantenimiento</b>\n` +
           `${work.trim()}${vehicleId ? " — " + vehicleName(vehicleId) : ""}\n` +
           (targetDate ? `Fecha objetivo: ${targetDate}\n` : "") +
+          (targetKmValue != null ? `Km objetivo: ${targetKmValue.toLocaleString("es-AR")}\n` : "") +
           `Revisala en la app, sección Mantenimiento.`
       );
     }
@@ -118,6 +147,8 @@ function MantenimientoContent() {
     setWork("");
     setResponsibleId("");
     setTargetDate("");
+    setTargetKm("");
+    setCost("");
     setShowForm(false);
     load();
   };
@@ -214,42 +245,9 @@ function MantenimientoContent() {
     load();
   };
 
-  const handlePrint = (r: MaintenanceRecord) => {
-    const win = window.open("", "_blank", "width=600,height=700");
-    if (!win) return;
-    win.document.write(`
-      <html>
-        <head>
-          <title>Orden de mantenimiento</title>
-          <style>
-            body { font-family: system-ui, sans-serif; padding: 32px; color: #1a1a1a; }
-            h1 { font-size: 20px; margin-bottom: 4px; }
-            .meta { color: #666; font-size: 13px; margin-bottom: 24px; }
-            .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
-            .label { color: #666; }
-          </style>
-        </head>
-        <body>
-          <h1>Orden de mantenimiento</h1>
-          <p class="meta">Generada ${new Date().toLocaleString("es-AR")}</p>
-          <div class="row"><span class="label">Trabajo</span><span>${r.work}</span></div>
-          <div class="row"><span class="label">Vehículo</span><span>${vehicleName(r.vehicle_id)}</span></div>
-          <div class="row"><span class="label">Tipo</span><span>${MAINTENANCE_TYPE_LABELS[r.type]}</span></div>
-          <div class="row"><span class="label">Estado</span><span>${MAINTENANCE_STATUS_LABELS[r.status]}</span></div>
-          <div class="row"><span class="label">Personal encargado</span><span>${r.responsible ?? "—"}</span></div>
-          <div class="row"><span class="label">Fecha objetivo</span><span>${r.target_date ?? "Sin definir"}</span></div>
-          <div class="row"><span class="label">Costo</span><span>${r.cost ?? "—"}</span></div>
-          <div class="row"><span class="label">Notas</span><span>${r.notes ?? "—"}</span></div>
-        </body>
-      </html>
-    `);
-    win.document.close();
-    win.focus();
-    win.print();
-  };
-
   const pending = records.filter((r) => r.status !== "completado");
   const completed = records.filter((r) => r.status === "completado");
+  const totalSpent = records.reduce((sum, r) => sum + (r.cost ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -262,6 +260,15 @@ function MantenimientoContent() {
           + Nueva orden
         </button>
       </div>
+
+      {totalSpent > 0 && (
+        <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
+          <p className="text-xs text-neutral-500">Total gastado en mantenimiento</p>
+          <p className="text-lg font-bold text-neutral-900">
+            ${totalSpent.toLocaleString("es-AR")}
+          </p>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -317,12 +324,32 @@ function MantenimientoContent() {
             ))}
           </select>
           <input
-            type="date"
-            value={targetDate}
-            onChange={(e) => setTargetDate(e.target.value)}
-            placeholder="Fecha objetivo"
+            type="number"
+            value={cost}
+            onChange={(e) => setCost(e.target.value)}
+            placeholder="Precio (opcional)"
             className="rounded-md border border-neutral-300 px-3 py-2"
           />
+          <label className="text-xs sm:col-span-2">
+            <span className="mb-1 block text-neutral-500">
+              Próximo service — por fecha y/o por km (lo que corresponda)
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="date"
+                value={targetDate}
+                onChange={(e) => setTargetDate(e.target.value)}
+                className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
+              />
+              <input
+                type="number"
+                value={targetKm}
+                onChange={(e) => setTargetKm(e.target.value)}
+                placeholder="Km objetivo"
+                className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
+              />
+            </div>
+          </label>
           <button
             type="submit"
             className="rounded-md bg-brand py-2 text-sm font-medium text-white hover:bg-brand-dark sm:col-span-2"
@@ -342,21 +369,30 @@ function MantenimientoContent() {
           </p>
         ) : (
           pending.map((r) => {
-            const level = getMaintenanceAlertLevel(r);
+            const level = getMaintenanceAlertLevel(
+              r,
+              vehicles.find((v) => v.id === r.vehicle_id)?.km
+            );
+            const finding = findingFor(r.id);
             return (
               <div key={r.id} className="rounded-xl border border-neutral-200 bg-white p-4">
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-medium text-neutral-800">
+                  <button
+                    type="button"
+                    onClick={() => setDetailRecord(r)}
+                    className="text-left"
+                  >
+                    <p className="font-medium text-neutral-800 hover:underline">
                       {r.work} <span className="text-neutral-400">— {vehicleName(r.vehicle_id)}</span>
                     </p>
                     <p className="text-xs text-neutral-500">
                       {MAINTENANCE_TYPE_LABELS[r.type]}
+                      {finding ? " · 🚧 desde un hallazgo" : ""}
                     </p>
-                  </div>
-                  {!r.target_date ? (
+                  </button>
+                  {!r.target_date && r.target_km == null ? (
                     <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-500">
-                      Sin fecha definida
+                      Sin fecha/km definido
                     </span>
                   ) : (
                     <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${ALERT_COLORS[level]}`}>
@@ -414,10 +450,16 @@ function MantenimientoContent() {
                     </p>
                   )}
                   <button
-                    onClick={() => handlePrint(r)}
+                    onClick={() => setDetailRecord(r)}
                     className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
                   >
-                    🖨️ Imprimir
+                    📋 Ver detalle
+                  </button>
+                  <button
+                    onClick={() => setPreviewRecord(r)}
+                    className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                  >
+                    👁️ Vista previa
                   </button>
                   <button
                     onClick={() => handleDelete(r)}
@@ -442,26 +484,38 @@ function MantenimientoContent() {
                   <th className="px-4 py-2 font-medium">Trabajo</th>
                   <th className="px-4 py-2 font-medium">Vehículo</th>
                   <th className="px-4 py-2 font-medium">Completado</th>
+                  <th className="px-4 py-2 font-medium">Precio</th>
                   <th className="px-4 py-2 font-medium"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {completed.map((r) => (
                   <tr key={r.id}>
-                    <td className="px-4 py-2 text-neutral-800">{r.work}</td>
+                    <td className="px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => setDetailRecord(r)}
+                        className="text-left text-neutral-800 hover:underline"
+                      >
+                        {r.work}
+                      </button>
+                    </td>
                     <td className="px-4 py-2 text-neutral-600">{vehicleName(r.vehicle_id)}</td>
                     <td className="px-4 py-2 text-neutral-500">
                       {r.completed_at
                         ? new Date(r.completed_at).toLocaleDateString("es-AR")
                         : "—"}
                     </td>
+                    <td className="px-4 py-2 text-neutral-500">
+                      {r.cost != null ? `$${r.cost.toLocaleString("es-AR")}` : "—"}
+                    </td>
                     <td className="px-4 py-2">
                       <div className="flex gap-2">
                         <button
-                          onClick={() => handlePrint(r)}
+                          onClick={() => setPreviewRecord(r)}
                           className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
                         >
-                          🖨️
+                          👁️
                         </button>
                         <button
                           onClick={() => handleDelete(r)}
@@ -477,6 +531,28 @@ function MantenimientoContent() {
             </table>
           </div>
         </div>
+      )}
+
+      {detailRecord && (
+        <MaintenanceDetailModal
+          record={detailRecord}
+          vehicles={vehicles}
+          personal={personal}
+          linkedFinding={findingFor(detailRecord.id)}
+          onClose={() => setDetailRecord(null)}
+          onSaved={() => {
+            setDetailRecord(null);
+            load();
+          }}
+        />
+      )}
+
+      {previewRecord && (
+        <MaintenancePreviewModal
+          record={previewRecord}
+          vehicleName={vehicleName(previewRecord.vehicle_id)}
+          onClose={() => setPreviewRecord(null)}
+        />
       )}
     </div>
   );

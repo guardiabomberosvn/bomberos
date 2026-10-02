@@ -98,7 +98,11 @@ async function notifyInApp(organizationId: string, title: string, body?: string)
 }
 
 // Avisos fijos mientras la orden sigue "pendiente": 15 días antes, 1 semana
-// antes y 1 día antes (o ya vencido). Cada uno se manda una sola vez.
+// antes y 1 día antes (o ya vencido). Cada uno se manda una sola vez. El
+// mismo checkpoint también se usa para el service programado por KM (ver
+// kmCheckpointForKmLeft más abajo) usando los mismos umbrales que el
+// semáforo visual (getMaintenanceAlertLevel: 500 / 2000 km), así los dos
+// quedan consistentes entre sí.
 type PendingCheckpoint = "15_dias" | "1_semana" | "1_dia";
 
 const PENDING_CHECKPOINT_RANK: Record<PendingCheckpoint, number> = {
@@ -114,6 +118,27 @@ function pendingCheckpointForDaysLeft(daysLeft: number): PendingCheckpoint | nul
   return null;
 }
 
+// Equivalente por kilómetros: antes esta función no existía, así que un
+// service programado SOLO por km (sin fecha objetivo) nunca mandaba avisos
+// por Telegram — checkAndNotifyMaintenanceDueDates solo miraba target_date.
+function kmCheckpointForKmLeft(kmLeft: number): PendingCheckpoint | null {
+  if (kmLeft <= 500) return "1_dia";
+  if (kmLeft <= 2000) return "1_semana";
+  return null;
+}
+
+// Si la orden tiene fecha Y km objetivo, se manda el aviso que corresponda
+// al criterio más urgente de los dos (mismo criterio que usa
+// getMaintenanceAlertLevel para el semáforo visual).
+function mostUrgentCheckpoint(
+  a: PendingCheckpoint | null,
+  b: PendingCheckpoint | null
+): PendingCheckpoint | null {
+  if (!a) return b;
+  if (!b) return a;
+  return PENDING_CHECKPOINT_RANK[a] >= PENDING_CHECKPOINT_RANK[b] ? a : b;
+}
+
 const PENDING_CHECKPOINT_TELEGRAM_LABELS: Record<PendingCheckpoint, string> = {
   "15_dias": "🟡 Vence en 15 días o menos",
   "1_semana": "🟠 Vence en 1 semana o menos",
@@ -122,16 +147,19 @@ const PENDING_CHECKPOINT_TELEGRAM_LABELS: Record<PendingCheckpoint, string> = {
 
 /**
  * Revisa las órdenes de mantenimiento pendientes y manda los avisos por
- * Telegram que correspondan:
+ * Telegram que correspondan. El service programado puede tener fecha
+ * objetivo, km objetivo, o ambos — si tiene ambos, se usa el criterio más
+ * urgente de los dos para decidir cuándo avisar.
  *
  *  - Mientras la orden sigue "pendiente": tres avisos fijos, cada uno una
- *    sola vez, a los contactos generales configurados — 15 días antes de la
- *    fecha objetivo, 1 semana antes y 1 día antes (o vencido). Se guarda en
- *    alert_checkpoint hasta cuál de los tres ya se mandó, para no repetir.
+ *    sola vez, a los contactos generales configurados — equivalentes a 15
+ *    días antes, 1 semana antes y 1 día antes (o vencido/pasado de km). Se
+ *    guarda en alert_checkpoint hasta cuál de los tres ya se mandó, para no
+ *    repetir.
  *  - Si la orden pasa a "en proceso", esos tres avisos generales se cortan:
  *    en su lugar se manda un único mensaje, solo a la persona asignada como
- *    responsable, el día antes de que venza (o si ya venció y sigue en
- *    proceso).
+ *    responsable, cuando falta 1 día o menos (o 500 km o menos) para la
+ *    fecha/km objetivo, o si ya se pasó y sigue en proceso.
  *
  * El "claim" con el update condicional evita que dos sesiones abiertas al
  * mismo tiempo (o dos recargas seguidas) manden el mismo aviso duplicado.
@@ -142,16 +170,31 @@ export async function checkAndNotifyMaintenanceDueDates(
   vehicles: Vehicle[],
   personal: Profile[]
 ) {
-  const pending = records.filter((r) => r.status !== "completado" && r.target_date);
+  const pending = records.filter(
+    (r) => r.status !== "completado" && (r.target_date || r.target_km != null)
+  );
 
   for (const r of pending) {
     const vehicle = vehicles.find((v) => v.id === r.vehicle_id);
-    const daysLeft = Math.floor(
-      (new Date(r.target_date as string).getTime() - Date.now()) / DAY_MS
-    );
+
+    const daysLeft = r.target_date
+      ? Math.floor((new Date(r.target_date).getTime() - Date.now()) / DAY_MS)
+      : null;
+    const kmLeft =
+      r.target_km != null && vehicle ? r.target_km - vehicle.km : null;
+
+    const targetLine =
+      (r.target_date ? `Fecha objetivo: ${r.target_date}\n` : "") +
+      (r.target_km != null
+        ? `Km objetivo: ${r.target_km.toLocaleString("es-AR")}${
+            vehicle ? ` (actual: ${vehicle.km.toLocaleString("es-AR")})` : ""
+          }\n`
+        : "");
 
     if (r.status === "en_proceso") {
-      if (daysLeft > 1) continue;
+      const dateUrgent = daysLeft != null && daysLeft <= 1;
+      const kmUrgent = kmLeft != null && kmLeft <= 500;
+      if (!dateUrgent && !kmUrgent) continue;
       if (r.alert_checkpoint === "en_proceso_dia_antes") continue;
       const responsible = personal.find((p) => p.id === r.responsible_id);
       if (!responsible) continue;
@@ -166,20 +209,22 @@ export async function checkAndNotifyMaintenanceDueDates(
 
       await notifyResponsible(
         responsible,
-        `🔧 <b>Mantenimiento en proceso — vence mañana</b>\n` +
+        `🔧 <b>Mantenimiento en proceso — está por vencer</b>\n` +
           `${r.work}${vehicle ? " — " + vehicle.name : ""}\n` +
-          `Fecha objetivo: ${r.target_date}\n` +
+          targetLine +
           `Revisalo en la app, sección Mantenimiento.`
       );
       await notifyInApp(
         organizationId,
-        "🔧 Mantenimiento en proceso — vence mañana",
+        "🔧 Mantenimiento en proceso — está por vencer",
         `${r.work}${vehicle ? " — " + vehicle.name : ""}`
       );
       continue;
     }
 
-    const checkpoint = pendingCheckpointForDaysLeft(daysLeft);
+    const dateCheckpoint = daysLeft != null ? pendingCheckpointForDaysLeft(daysLeft) : null;
+    const kmCheckpoint = kmLeft != null ? kmCheckpointForKmLeft(kmLeft) : null;
+    const checkpoint = mostUrgentCheckpoint(dateCheckpoint, kmCheckpoint);
     if (!checkpoint) continue;
     const alreadyRank =
       r.alert_checkpoint && r.alert_checkpoint in PENDING_CHECKPOINT_RANK
@@ -199,7 +244,7 @@ export async function checkAndNotifyMaintenanceDueDates(
     const message =
       `🔧 <b>Mantenimiento ${label}</b>\n` +
       `${r.work}${vehicle ? " — " + vehicle.name : ""}\n` +
-      `Fecha objetivo: ${r.target_date}\n` +
+      targetLine +
       `Revisalo en la app, sección Mantenimiento.`;
     await notifyMaintenanceContacts(organizationId, message);
     await notifyInApp(
