@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import type { Vehicle } from "@/lib/types";
+import type { MaintenanceType, Vehicle } from "@/lib/types";
+import { MAINTENANCE_TYPE_LABELS } from "@/lib/types";
 
 export function EditVehicleModal({
   vehicle,
@@ -23,6 +24,14 @@ export function EditVehicleModal({
   const [tankLiters, setTankLiters] = useState(
     vehicle.tank_liters != null ? String(vehicle.tank_liters) : ""
   );
+  const [nextServiceDate, setNextServiceDate] = useState(vehicle.next_service_date ?? "");
+  const [nextServiceKm, setNextServiceKm] = useState(
+    vehicle.next_service_km != null ? String(vehicle.next_service_km) : ""
+  );
+  const [nextServiceType, setNextServiceType] = useState<MaintenanceType | "">(
+    vehicle.next_service_type ?? ""
+  );
+  const [nextServiceNotes, setNextServiceNotes] = useState(vehicle.next_service_notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,6 +46,20 @@ export function EditVehicleModal({
       setError("Los litros tienen que ser un número.");
       return;
     }
+    const nextServiceKmValue = nextServiceKm.trim() ? Number(nextServiceKm) : null;
+    if (nextServiceKm.trim() && Number.isNaN(nextServiceKmValue)) {
+      setError("El km del próximo service tiene que ser un número.");
+      return;
+    }
+    const nextServiceDateValue = nextServiceDate || null;
+
+    // Si cambió la fecha o el km del próximo service, reiniciamos el
+    // "checkpoint" de avisos ya mandados — si no, al reprogramar un service
+    // que ya había avisado, no volvería a avisar de nuevo a tiempo.
+    const scheduleChanged =
+      nextServiceDateValue !== (vehicle.next_service_date ?? null) ||
+      nextServiceKmValue !== (vehicle.next_service_km ?? null);
+
     setSaving(true);
     const { error: updateError } = await supabase
       .from("vehicles")
@@ -49,6 +72,11 @@ export function EditVehicleModal({
         chassis_number: chassisNumber.trim() || null,
         engine_number: engineNumber.trim() || null,
         tank_liters: tankLitersValue,
+        next_service_date: nextServiceDateValue,
+        next_service_km: nextServiceKmValue,
+        next_service_type: nextServiceType || null,
+        next_service_notes: nextServiceNotes.trim() || null,
+        ...(scheduleChanged ? { service_alert_checkpoint: null } : {}),
       })
       .eq("id", vehicle.id);
     setSaving(false);
@@ -99,6 +127,50 @@ export function EditVehicleModal({
             type="number"
             placeholder="Ej: 3000 (tanque de agua)"
           />
+
+          <div className="border-t border-neutral-100 pt-3 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            Próximo service
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label="Fecha"
+              value={nextServiceDate}
+              onChange={setNextServiceDate}
+              type="date"
+            />
+            <Field
+              label="Km"
+              value={nextServiceKm}
+              onChange={setNextServiceKm}
+              type="number"
+              placeholder="Ej: 85000"
+            />
+          </div>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-neutral-700">Tipo de service</span>
+            <select
+              value={nextServiceType}
+              onChange={(e) => setNextServiceType(e.target.value as MaintenanceType | "")}
+              className="w-full rounded-md border border-neutral-300 px-3 py-2"
+            >
+              <option value="">Sin especificar</option>
+              {(Object.keys(MAINTENANCE_TYPE_LABELS) as MaintenanceType[]).map((t) => (
+                <option key={t} value={t}>
+                  {MAINTENANCE_TYPE_LABELS[t]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-neutral-700">Qué hay que hacer</span>
+            <textarea
+              value={nextServiceNotes}
+              onChange={(e) => setNextServiceNotes(e.target.value)}
+              rows={2}
+              placeholder="Ej: Cambio de aceite y filtros"
+              className="w-full rounded-md border border-neutral-300 px-3 py-2"
+            />
+          </label>
         </div>
 
         <div className="mt-5 flex justify-end gap-2">

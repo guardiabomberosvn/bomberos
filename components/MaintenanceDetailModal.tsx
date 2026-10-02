@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { notifyResponsible } from "@/lib/maintenance";
+import { EditFindingModal } from "@/components/EditFindingModal";
 import type {
   MaintenanceFinding,
   MaintenanceRecord,
@@ -17,11 +18,14 @@ import {
   MAINTENANCE_TYPE_LABELS,
 } from "@/lib/types";
 
-// Modal de detalle/edición completa de una orden de mantenimiento. Antes
-// solo se podía cambiar estado, fecha objetivo y responsable desde la lista;
-// acá se puede editar todo (incluyendo los datos de la reparación en sí:
-// km, proveedor, quién la hizo) y, si la orden nació de un hallazgo
-// reportado por un bombero, se ve la foto y el detalle de ese hallazgo.
+// Modal de detalle/edición completa de una orden de mantenimiento: acá se
+// edita solo el trabajo en sí (qué se hizo, km, proveedor, quién lo
+// reparó, precio) — el próximo service programado es un dato de la unidad
+// y se edita desde Flota, no desde acá. Si la orden nació de un hallazgo
+// reportado por un bombero, se ve la foto y el detalle de ese hallazgo, y
+// desde acá mismo se puede editar o eliminar ese hallazgo (a propósito no
+// se puede desde el apartado de Hallazgos, para que todo el mantenimiento
+// — incluido lo que generaron los hallazgos — se edite en un solo lugar).
 export function MaintenanceDetailModal({
   record,
   vehicles,
@@ -29,6 +33,7 @@ export function MaintenanceDetailModal({
   linkedFinding,
   onClose,
   onSaved,
+  onFindingChanged,
 }: {
   record: MaintenanceRecord;
   vehicles: Vehicle[];
@@ -36,16 +41,15 @@ export function MaintenanceDetailModal({
   linkedFinding: MaintenanceFinding | null;
   onClose: () => void;
   onSaved: () => void;
+  onFindingChanged: () => void;
 }) {
+  const [editingFinding, setEditingFinding] = useState(false);
+  const [deletingFinding, setDeletingFinding] = useState(false);
   const [vehicleId, setVehicleId] = useState(record.vehicle_id ?? "");
   const [type, setType] = useState<MaintenanceType>(record.type);
   const [work, setWork] = useState(record.work);
   const [responsibleId, setResponsibleId] = useState(record.responsible_id ?? "");
   const [status, setStatus] = useState<MaintenanceStatus>(record.status);
-  const [targetDate, setTargetDate] = useState(record.target_date ?? "");
-  const [targetKm, setTargetKm] = useState(
-    record.target_km != null ? String(record.target_km) : ""
-  );
   const [cost, setCost] = useState(record.cost != null ? String(record.cost) : "");
   const [repairKm, setRepairKm] = useState(
     record.repair_km != null ? String(record.repair_km) : ""
@@ -64,13 +68,8 @@ export function MaintenanceDetailModal({
       setError("El trabajo no puede estar vacío.");
       return;
     }
-    const targetKmValue = toNumberOrNull(targetKm);
     const costValue = toNumberOrNull(cost);
     const repairKmValue = toNumberOrNull(repairKm);
-    if (targetKm.trim() && Number.isNaN(targetKmValue)) {
-      setError("El km objetivo tiene que ser un número.");
-      return;
-    }
     if (cost.trim() && Number.isNaN(costValue)) {
       setError("El costo tiene que ser un número.");
       return;
@@ -93,8 +92,6 @@ export function MaintenanceDetailModal({
         responsible_id: responsibleId || null,
         responsible: responsiblePerson?.full_name ?? null,
         status,
-        target_date: targetDate || null,
-        target_km: targetKmValue,
         cost: costValue,
         repair_km: repairKmValue,
         provider: provider.trim() || null,
@@ -119,7 +116,6 @@ export function MaintenanceDetailModal({
         responsiblePerson,
         `🔧 <b>Se te asignó una orden de mantenimiento</b>\n` +
           `${work.trim()}${vehicle ? " — " + vehicle.name : ""}\n` +
-          (targetDate ? `Fecha objetivo: ${targetDate}\n` : "") +
           `Revisala en la app, sección Mantenimiento.`
       );
     }
@@ -154,17 +150,57 @@ export function MaintenanceDetailModal({
               {linkedFinding.area ? `${linkedFinding.area} · ` : ""}
               Prioridad: {FINDING_PRIORITY_LABELS[linkedFinding.priority]}
             </p>
-            {linkedFinding.photo_url && (
-              <a
-                href={linkedFinding.photo_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 inline-flex items-center gap-1 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-50"
+            <div className="mt-2 flex flex-wrap gap-2">
+              {linkedFinding.photo_url && (
+                <a
+                  href={linkedFinding.photo_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-50"
+                >
+                  📷 Ver foto del hallazgo
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setEditingFinding(true)}
+                className="inline-flex items-center gap-1 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-50"
               >
-                📷 Ver foto del hallazgo
-              </a>
-            )}
+                ✏️ Editar hallazgo
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (
+                    !window.confirm(
+                      "¿Eliminar este hallazgo? La orden de mantenimiento no se borra, solo se quita la referencia al hallazgo."
+                    )
+                  )
+                    return;
+                  setDeletingFinding(true);
+                  await supabase.from("maintenance_findings").delete().eq("id", linkedFinding.id);
+                  setDeletingFinding(false);
+                  onFindingChanged();
+                }}
+                disabled={deletingFinding}
+                className="inline-flex items-center gap-1 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-60"
+              >
+                {deletingFinding ? "Eliminando…" : "🗑️ Eliminar hallazgo"}
+              </button>
+            </div>
           </div>
+        )}
+
+        {editingFinding && linkedFinding && (
+          <EditFindingModal
+            finding={linkedFinding}
+            vehicles={vehicles}
+            onClose={() => setEditingFinding(false)}
+            onSaved={() => {
+              setEditingFinding(false);
+              onFindingChanged();
+            }}
+          />
         )}
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -237,31 +273,6 @@ export function MaintenanceDetailModal({
                 </option>
               ))}
             </select>
-          </label>
-
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium text-neutral-700">
-              Próximo service — fecha
-            </span>
-            <input
-              type="date"
-              value={targetDate}
-              onChange={(e) => setTargetDate(e.target.value)}
-              className="w-full rounded-md border border-neutral-300 px-3 py-2"
-            />
-          </label>
-
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium text-neutral-700">
-              Próximo service — km
-            </span>
-            <input
-              type="number"
-              value={targetKm}
-              onChange={(e) => setTargetKm(e.target.value)}
-              placeholder="Ej: 85000"
-              className="w-full rounded-md border border-neutral-300 px-3 py-2"
-            />
           </label>
 
           <div className="border-t border-neutral-100 pt-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 sm:col-span-2">

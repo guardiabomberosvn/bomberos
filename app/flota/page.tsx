@@ -7,6 +7,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { EditVehicleModal } from "@/components/EditVehicleModal";
 import { supabase } from "@/lib/supabase";
+import { getVehicleServiceAlertLevel } from "@/lib/maintenance";
 import type {
   FuelLoad,
   MaintenanceFinding,
@@ -15,7 +16,14 @@ import type {
   VehicleMovement,
   VehicleStatus,
 } from "@/lib/types";
-import { VEHICLE_STATUS_LABELS } from "@/lib/types";
+import { MAINTENANCE_ALERT_LABELS, MAINTENANCE_TYPE_LABELS, VEHICLE_STATUS_LABELS } from "@/lib/types";
+
+const SERVICE_ALERT_COLORS: Record<string, string> = {
+  en_termino: "bg-emerald-50 text-emerald-700",
+  proximo: "bg-amber-50 text-amber-700",
+  muy_proximo: "bg-orange-50 text-orange-700",
+  vencido: "bg-red-50 text-red-700",
+};
 
 const STATUS_COLORS: Record<VehicleStatus, string> = {
   disponible: "bg-emerald-50 text-emerald-700",
@@ -324,7 +332,7 @@ function FlotaContent() {
                           href={`/mantenimiento?vehicle=${v.id}`}
                           className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
                         >
-                          🔧 Programar service
+                          🔧 Nueva orden
                         </Link>
                         <button
                           onClick={() => setEditingVehicle(v)}
@@ -370,6 +378,40 @@ function FlotaContent() {
                               {v.tank_liters.toLocaleString("es-AR")} L
                             </p>
                           </div>
+                        )}
+                      </div>
+                    )}
+
+                    {(v.next_service_date || v.next_service_km != null) && (
+                      <div className="rounded-lg border border-neutral-200 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                            🔧 Próximo service
+                          </p>
+                          {(() => {
+                            const level = getVehicleServiceAlertLevel(v);
+                            return level ? (
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${SERVICE_ALERT_COLORS[level]}`}
+                              >
+                                {MAINTENANCE_ALERT_LABELS[level]}
+                              </span>
+                            ) : null;
+                          })()}
+                        </div>
+                        <p className="mt-1 text-sm text-neutral-700">
+                          {[
+                            v.next_service_date ? `Fecha: ${v.next_service_date}` : null,
+                            v.next_service_km != null
+                              ? `Km: ${v.next_service_km.toLocaleString("es-AR")}`
+                              : null,
+                            v.next_service_type ? MAINTENANCE_TYPE_LABELS[v.next_service_type] : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                        {v.next_service_notes && (
+                          <p className="mt-1 text-xs text-neutral-500">{v.next_service_notes}</p>
                         )}
                       </div>
                     )}

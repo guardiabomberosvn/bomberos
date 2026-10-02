@@ -1,26 +1,25 @@
 import { supabase } from "@/lib/supabase";
 import { sendTelegramMessage } from "@/lib/telegram";
-import type { MaintenanceAlertLevel, MaintenanceRecord, Profile, Vehicle } from "@/lib/types";
+import type { MaintenanceAlertLevel, Profile, ServiceAlertCheckpoint, Vehicle } from "@/lib/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Calcula el semáforo de alerta de un mantenimiento comparando la fecha
- * objetivo (target_date) contra hoy, y/o el km objetivo (target_km) contra
- * el km actual del vehículo (currentKm). Si hay ambos criterios, se usa el
- * más urgente de los dos.
+ * Calcula el semáforo de alerta del PRÓXIMO SERVICE de una unidad,
+ * comparando next_service_date contra hoy y/o next_service_km contra el km
+ * actual del vehículo. Si hay ambos criterios, se usa el más urgente de los
+ * dos. Esto reemplaza a la vieja getMaintenanceAlertLevel (que miraba cada
+ * orden de mantenimiento) — el próximo service ahora es un dato de la
+ * unidad, no de una orden puntual.
  */
-export function getMaintenanceAlertLevel(
-  record: MaintenanceRecord,
-  currentKm?: number | null
-): MaintenanceAlertLevel {
-  if (record.status === "completado") return "completado";
+export function getVehicleServiceAlertLevel(vehicle: Vehicle): MaintenanceAlertLevel | null {
+  if (!vehicle.next_service_date && vehicle.next_service_km == null) return null;
 
   const levels: MaintenanceAlertLevel[] = [];
 
-  if (record.target_date) {
+  if (vehicle.next_service_date) {
     const daysLeft = Math.floor(
-      (new Date(record.target_date).getTime() - Date.now()) / DAY_MS
+      (new Date(vehicle.next_service_date).getTime() - Date.now()) / DAY_MS
     );
     if (daysLeft < 0) levels.push("vencido");
     else if (daysLeft <= 7) levels.push("muy_proximo");
@@ -28,15 +27,13 @@ export function getMaintenanceAlertLevel(
     else levels.push("en_termino");
   }
 
-  if (record.target_km != null && currentKm != null) {
-    const kmLeft = record.target_km - currentKm;
+  if (vehicle.next_service_km != null) {
+    const kmLeft = vehicle.next_service_km - vehicle.km;
     if (kmLeft < 0) levels.push("vencido");
     else if (kmLeft <= 500) levels.push("muy_proximo");
     else if (kmLeft <= 2000) levels.push("proximo");
     else levels.push("en_termino");
   }
-
-  if (levels.length === 0) return "en_termino";
 
   const priority: MaintenanceAlertLevel[] = [
     "vencido",
@@ -93,164 +90,113 @@ async function notifyInApp(organizationId: string, title: string, body?: string)
     type: "mantenimiento",
     title,
     body: body || null,
-    link: "/mantenimiento",
+    link: "/flota",
   });
 }
 
-// Avisos fijos mientras la orden sigue "pendiente": 15 días antes, 1 semana
-// antes y 1 día antes (o ya vencido). Cada uno se manda una sola vez. El
-// mismo checkpoint también se usa para el service programado por KM (ver
-// kmCheckpointForKmLeft más abajo) usando los mismos umbrales que el
-// semáforo visual (getMaintenanceAlertLevel: 500 / 2000 km), así los dos
-// quedan consistentes entre sí.
-type PendingCheckpoint = "15_dias" | "1_semana" | "1_dia";
-
-const PENDING_CHECKPOINT_RANK: Record<PendingCheckpoint, number> = {
+// Avisos fijos a medida que se acerca el próximo service: 15 días antes, 1
+// semana antes y 1 día antes (o ya vencido) — o su equivalente en km (2000 /
+// 500, los mismos umbrales que usa getVehicleServiceAlertLevel para el
+// semáforo visual, así quedan consistentes entre sí). Cada uno se manda una
+// sola vez por unidad.
+const CHECKPOINT_RANK: Record<ServiceAlertCheckpoint, number> = {
   "15_dias": 1,
   "1_semana": 2,
   "1_dia": 3,
 };
 
-function pendingCheckpointForDaysLeft(daysLeft: number): PendingCheckpoint | null {
+function dateCheckpointForDaysLeft(daysLeft: number): ServiceAlertCheckpoint | null {
   if (daysLeft <= 1) return "1_dia";
   if (daysLeft <= 7) return "1_semana";
   if (daysLeft <= 15) return "15_dias";
   return null;
 }
 
-// Equivalente por kilómetros: antes esta función no existía, así que un
-// service programado SOLO por km (sin fecha objetivo) nunca mandaba avisos
-// por Telegram — checkAndNotifyMaintenanceDueDates solo miraba target_date.
-function kmCheckpointForKmLeft(kmLeft: number): PendingCheckpoint | null {
+function kmCheckpointForKmLeft(kmLeft: number): ServiceAlertCheckpoint | null {
   if (kmLeft <= 500) return "1_dia";
   if (kmLeft <= 2000) return "1_semana";
   return null;
 }
 
-// Si la orden tiene fecha Y km objetivo, se manda el aviso que corresponda
-// al criterio más urgente de los dos (mismo criterio que usa
-// getMaintenanceAlertLevel para el semáforo visual).
 function mostUrgentCheckpoint(
-  a: PendingCheckpoint | null,
-  b: PendingCheckpoint | null
-): PendingCheckpoint | null {
+  a: ServiceAlertCheckpoint | null,
+  b: ServiceAlertCheckpoint | null
+): ServiceAlertCheckpoint | null {
   if (!a) return b;
   if (!b) return a;
-  return PENDING_CHECKPOINT_RANK[a] >= PENDING_CHECKPOINT_RANK[b] ? a : b;
+  return CHECKPOINT_RANK[a] >= CHECKPOINT_RANK[b] ? a : b;
 }
 
-const PENDING_CHECKPOINT_TELEGRAM_LABELS: Record<PendingCheckpoint, string> = {
+const CHECKPOINT_TELEGRAM_LABELS: Record<ServiceAlertCheckpoint, string> = {
   "15_dias": "🟡 Vence en 15 días o menos",
   "1_semana": "🟠 Vence en 1 semana o menos",
   "1_dia": "🔴 Vence mañana o ya venció",
 };
 
 /**
- * Revisa las órdenes de mantenimiento pendientes y manda los avisos por
- * Telegram que correspondan. El service programado puede tener fecha
+ * Revisa el próximo service programado de cada unidad y manda los avisos
+ * por Telegram que correspondan a los contactos generales configurados
+ * ("Recibe alertas de mantenimiento"). El service puede tener fecha
  * objetivo, km objetivo, o ambos — si tiene ambos, se usa el criterio más
- * urgente de los dos para decidir cuándo avisar.
+ * urgente de los dos. Cada uno de los tres avisos (15 días / 1 semana / 1
+ * día o vencido) se manda una sola vez por unidad; se guarda en
+ * vehicles.service_alert_checkpoint hasta cuál ya se mandó.
  *
- *  - Mientras la orden sigue "pendiente": tres avisos fijos, cada uno una
- *    sola vez, a los contactos generales configurados — equivalentes a 15
- *    días antes, 1 semana antes y 1 día antes (o vencido/pasado de km). Se
- *    guarda en alert_checkpoint hasta cuál de los tres ya se mandó, para no
- *    repetir.
- *  - Si la orden pasa a "en proceso", esos tres avisos generales se cortan:
- *    en su lugar se manda un único mensaje, solo a la persona asignada como
- *    responsable, cuando falta 1 día o menos (o 500 km o menos) para la
- *    fecha/km objetivo, o si ya se pasó y sigue en proceso.
+ * Antes esto miraba cada orden de mantenimiento pendiente (y tenía además un
+ * aviso aparte para cuando la orden pasaba a "en proceso"). Como el próximo
+ * service ahora es un dato de la unidad y no de una orden puntual, ese
+ * segundo aviso (al responsable asignado de la orden) ya no aplica — las
+ * órdenes de mantenimiento son simplemente el registro de trabajos hechos.
  *
  * El "claim" con el update condicional evita que dos sesiones abiertas al
  * mismo tiempo (o dos recargas seguidas) manden el mismo aviso duplicado.
  */
-export async function checkAndNotifyMaintenanceDueDates(
+export async function checkAndNotifyVehicleServiceDueDates(
   organizationId: string,
-  records: MaintenanceRecord[],
-  vehicles: Vehicle[],
-  personal: Profile[]
+  vehicles: Vehicle[]
 ) {
-  const pending = records.filter(
-    (r) => r.status !== "completado" && (r.target_date || r.target_km != null)
+  const pending = vehicles.filter(
+    (v) => v.is_active && (v.next_service_date || v.next_service_km != null)
   );
 
-  for (const r of pending) {
-    const vehicle = vehicles.find((v) => v.id === r.vehicle_id);
-
-    const daysLeft = r.target_date
-      ? Math.floor((new Date(r.target_date).getTime() - Date.now()) / DAY_MS)
+  for (const v of pending) {
+    const daysLeft = v.next_service_date
+      ? Math.floor((new Date(v.next_service_date).getTime() - Date.now()) / DAY_MS)
       : null;
-    const kmLeft =
-      r.target_km != null && vehicle ? r.target_km - vehicle.km : null;
+    const kmLeft = v.next_service_km != null ? v.next_service_km - v.km : null;
 
-    const targetLine =
-      (r.target_date ? `Fecha objetivo: ${r.target_date}\n` : "") +
-      (r.target_km != null
-        ? `Km objetivo: ${r.target_km.toLocaleString("es-AR")}${
-            vehicle ? ` (actual: ${vehicle.km.toLocaleString("es-AR")})` : ""
-          }\n`
-        : "");
-
-    if (r.status === "en_proceso") {
-      const dateUrgent = daysLeft != null && daysLeft <= 1;
-      const kmUrgent = kmLeft != null && kmLeft <= 500;
-      if (!dateUrgent && !kmUrgent) continue;
-      if (r.alert_checkpoint === "en_proceso_dia_antes") continue;
-      const responsible = personal.find((p) => p.id === r.responsible_id);
-      if (!responsible) continue;
-
-      const { data: claimed } = await supabase
-        .from("maintenance_records")
-        .update({ alert_checkpoint: "en_proceso_dia_antes", alert_notified_at: new Date().toISOString() })
-        .eq("id", r.id)
-        .or("alert_checkpoint.is.null,alert_checkpoint.neq.en_proceso_dia_antes")
-        .select("id");
-      if (!claimed || claimed.length === 0) continue;
-
-      await notifyResponsible(
-        responsible,
-        `🔧 <b>Mantenimiento en proceso — está por vencer</b>\n` +
-          `${r.work}${vehicle ? " — " + vehicle.name : ""}\n` +
-          targetLine +
-          `Revisalo en la app, sección Mantenimiento.`
-      );
-      await notifyInApp(
-        organizationId,
-        "🔧 Mantenimiento en proceso — está por vencer",
-        `${r.work}${vehicle ? " — " + vehicle.name : ""}`
-      );
-      continue;
-    }
-
-    const dateCheckpoint = daysLeft != null ? pendingCheckpointForDaysLeft(daysLeft) : null;
+    const dateCheckpoint = daysLeft != null ? dateCheckpointForDaysLeft(daysLeft) : null;
     const kmCheckpoint = kmLeft != null ? kmCheckpointForKmLeft(kmLeft) : null;
     const checkpoint = mostUrgentCheckpoint(dateCheckpoint, kmCheckpoint);
     if (!checkpoint) continue;
+
     const alreadyRank =
-      r.alert_checkpoint && r.alert_checkpoint in PENDING_CHECKPOINT_RANK
-        ? PENDING_CHECKPOINT_RANK[r.alert_checkpoint as PendingCheckpoint]
+      v.service_alert_checkpoint && v.service_alert_checkpoint in CHECKPOINT_RANK
+        ? CHECKPOINT_RANK[v.service_alert_checkpoint]
         : 0;
-    if (PENDING_CHECKPOINT_RANK[checkpoint] <= alreadyRank) continue;
+    if (CHECKPOINT_RANK[checkpoint] <= alreadyRank) continue;
 
     const { data: claimed } = await supabase
-      .from("maintenance_records")
-      .update({ alert_checkpoint: checkpoint, alert_notified_at: new Date().toISOString() })
-      .eq("id", r.id)
-      .or(`alert_checkpoint.is.null,alert_checkpoint.neq.${checkpoint}`)
+      .from("vehicles")
+      .update({ service_alert_checkpoint: checkpoint, service_alert_notified_at: new Date().toISOString() })
+      .eq("id", v.id)
+      .or(`service_alert_checkpoint.is.null,service_alert_checkpoint.neq.${checkpoint}`)
       .select("id");
     if (!claimed || claimed.length === 0) continue;
 
-    const label = PENDING_CHECKPOINT_TELEGRAM_LABELS[checkpoint];
+    const targetLine =
+      (v.next_service_date ? `Fecha: ${v.next_service_date}\n` : "") +
+      (v.next_service_km != null
+        ? `Km: ${v.next_service_km.toLocaleString("es-AR")} (actual: ${v.km.toLocaleString("es-AR")})\n`
+        : "");
+
+    const label = CHECKPOINT_TELEGRAM_LABELS[checkpoint];
     const message =
-      `🔧 <b>Mantenimiento ${label}</b>\n` +
-      `${r.work}${vehicle ? " — " + vehicle.name : ""}\n` +
+      `🔧 <b>Próximo service ${label}</b>\n` +
+      `${v.name}${v.next_service_notes ? " — " + v.next_service_notes : ""}\n` +
       targetLine +
-      `Revisalo en la app, sección Mantenimiento.`;
+      `Revisalo en la app, sección Flota.`;
     await notifyMaintenanceContacts(organizationId, message);
-    await notifyInApp(
-      organizationId,
-      `🔧 Mantenimiento ${label}`,
-      `${r.work}${vehicle ? " — " + vehicle.name : ""}`
-    );
+    await notifyInApp(organizationId, `🔧 ${v.name}: próximo service ${label}`, v.next_service_notes ?? undefined);
   }
 }

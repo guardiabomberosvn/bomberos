@@ -7,8 +7,8 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { checkAndNotifyMaintenanceDueDates, getMaintenanceAlertLevel } from "@/lib/maintenance";
-import type { Emergency, MaintenanceRecord, Profile, Vehicle } from "@/lib/types";
+import { checkAndNotifyVehicleServiceDueDates, getVehicleServiceAlertLevel } from "@/lib/maintenance";
+import type { Emergency, Profile, Vehicle } from "@/lib/types";
 
 function DashboardContent() {
   const { profile } = useAuth();
@@ -16,7 +16,6 @@ function DashboardContent() {
   const [personal, setPersonal] = useState<Profile[]>([]);
   const [presentesIds, setPresentesIds] = useState<Set<string>>(new Set());
   const [activeEmergencies, setActiveEmergencies] = useState<Emergency[]>([]);
-  const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -43,24 +42,13 @@ function DashboardContent() {
         .order("created_at", { ascending: false });
 
       if (isStaff) {
-        const { data: maintenance } = await supabase
-          .from("maintenance_records")
-          .select("*")
-          .neq("status", "completado");
         const { data: v } = await supabase.from("vehicles").select("*");
-        const maintenanceList = (maintenance as MaintenanceRecord[]) ?? [];
         const vehicleList = (v as Vehicle[]) ?? [];
-        setMaintenanceRecords(maintenanceList);
         setVehicles(vehicleList);
-        // Avisa por Telegram (a los contactos configurados, o al asignado si
-        // ya está "en proceso") las órdenes que acaban de entrar en alerta.
-        // No bloqueamos el dashboard por esto.
-        checkAndNotifyMaintenanceDueDates(
-          profile.organization_id,
-          maintenanceList,
-          vehicleList,
-          (profiles as Profile[]) ?? []
-        );
+        // Avisa por Telegram a los contactos configurados cuando el próximo
+        // service de una unidad acaba de entrar en alerta. No bloqueamos el
+        // dashboard por esto.
+        checkAndNotifyVehicleServiceDueDates(profile.organization_id, vehicleList);
       }
 
       setPersonal((profiles as Profile[]) ?? []);
@@ -121,17 +109,13 @@ function DashboardContent() {
   const disponibles = activos.filter((p) => p.availability === "disponible");
   const presentes = activos.filter((p) => presentesIds.has(p.id));
 
-  const urgentMaintenance = maintenanceRecords.filter((r) => {
-    const vehicle = vehicles.find((v) => v.id === r.vehicle_id);
-    const level = getMaintenanceAlertLevel(r, vehicle?.km);
+  const urgentVehicles = vehicles.filter((v) => {
+    const level = getVehicleServiceAlertLevel(v);
     return level === "vencido" || level === "muy_proximo";
   });
-  const overdueCount = urgentMaintenance.filter((r) => {
-    const vehicle = vehicles.find((v) => v.id === r.vehicle_id);
-    return getMaintenanceAlertLevel(r, vehicle?.km) === "vencido";
-  }).length;
-
-  const undatedMaintenance = maintenanceRecords.filter((r) => !r.target_date);
+  const overdueCount = urgentVehicles.filter(
+    (v) => getVehicleServiceAlertLevel(v) === "vencido"
+  ).length;
 
   return (
     <div className="space-y-7">
@@ -172,38 +156,22 @@ function DashboardContent() {
         </Link>
       )}
 
-      {isStaff && urgentMaintenance.length > 0 && (
+      {isStaff && urgentVehicles.length > 0 && (
         <Link
-          href="/mantenimiento"
+          href="/flota"
           className="block rounded-2xl border border-orange-200 bg-orange-50 p-4 transition-colors hover:bg-orange-100/70"
         >
           <p className="font-semibold text-orange-900">
-            🔧 {urgentMaintenance.length === 1
-              ? "1 alerta de mantenimiento"
-              : `${urgentMaintenance.length} alertas de mantenimiento`}
+            🔧 {urgentVehicles.length === 1
+              ? "1 unidad con service próximo"
+              : `${urgentVehicles.length} unidades con service próximo`}
             {overdueCount > 0 && (
               <span className="ml-2 font-medium text-red-700">
                 ({overdueCount} vencida{overdueCount > 1 ? "s" : ""})
               </span>
             )}
           </p>
-          <p className="text-sm text-orange-800/70">Tocá para ver el detalle</p>
-        </Link>
-      )}
-
-      {isStaff && undatedMaintenance.length > 0 && (
-        <Link
-          href="/mantenimiento"
-          className="block rounded-2xl border border-black/[0.06] bg-white p-4 shadow-card transition-colors hover:bg-neutral-50"
-        >
-          <p className="font-medium text-ink-800">
-            🚧 {undatedMaintenance.length === 1
-              ? "1 orden de mantenimiento sin fecha asignada"
-              : `${undatedMaintenance.length} órdenes de mantenimiento sin fecha asignada`}
-          </p>
-          <p className="text-sm text-ink-400">
-            Puede venir de un hallazgo reportado — asignale una fecha para que empiece a avisar
-          </p>
+          <p className="text-sm text-orange-800/70">Tocá para ver el detalle en Flota</p>
         </Link>
       )}
 

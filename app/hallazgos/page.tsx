@@ -7,7 +7,6 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { notifyMaintenanceContacts } from "@/lib/maintenance";
-import { EditFindingModal } from "@/components/EditFindingModal";
 import type { FindingPriority, MaintenanceFinding, Vehicle } from "@/lib/types";
 import { FINDING_PRIORITY_LABELS, FINDING_STATUS_LABELS } from "@/lib/types";
 
@@ -31,7 +30,6 @@ const AREA_OPTIONS = [
 
 function HallazgosContent() {
   const { profile } = useAuth();
-  const isStaff = profile?.role === "admin" || profile?.role === "guardia";
 
   const [findings, setFindings] = useState<MaintenanceFinding[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -47,7 +45,6 @@ function HallazgosContent() {
   const [priority, setPriority] = useState<FindingPriority>("media");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [editingFinding, setEditingFinding] = useState<MaintenanceFinding | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -155,18 +152,6 @@ function HallazgosContent() {
     setPhotoFile(null);
     setShowForm(false);
     setSuccess("Hallazgo reportado. Se generó automáticamente una orden en Mantenimiento.");
-    load();
-  };
-
-  const handleDelete = async (finding: MaintenanceFinding) => {
-    if (!window.confirm("¿Eliminar este hallazgo? La orden de mantenimiento que generó no se borra.")) {
-      return;
-    }
-    const { error: deleteError } = await supabase
-      .from("maintenance_findings")
-      .delete()
-      .eq("id", finding.id);
-    if (deleteError) setError(deleteError.message);
     load();
   };
 
@@ -303,7 +288,7 @@ function HallazgosContent() {
                         href="/mantenimiento"
                         className="ml-2 font-medium text-brand hover:underline"
                       >
-                        Ver en Mantenimiento →
+                        Ver / editar en Mantenimiento →
                       </Link>
                     )}
                   </p>
@@ -314,38 +299,10 @@ function HallazgosContent() {
                   {FINDING_PRIORITY_LABELS[f.priority]}
                 </span>
               </div>
-              {isStaff && (
-                <div className="mt-3 flex gap-2">
-                  <button
-                    onClick={() => setEditingFinding(f)}
-                    className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
-                  >
-                    Editar
-                  </button>
-                  <button
-                    onClick={() => handleDelete(f)}
-                    className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
-                  >
-                    Eliminar hallazgo
-                  </button>
-                </div>
-              )}
             </div>
           ))
         )}
       </div>
-
-      {editingFinding && (
-        <EditFindingModal
-          finding={editingFinding}
-          vehicles={vehicles}
-          onClose={() => setEditingFinding(null)}
-          onSaved={() => {
-            setEditingFinding(null);
-            load();
-          }}
-        />
-      )}
     </div>
   );
 }

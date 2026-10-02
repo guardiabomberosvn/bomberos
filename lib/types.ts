@@ -268,6 +268,17 @@ export interface Vehicle {
   // Capacidad en litros (tanque de agua/espuma, combustible, etc.), si
   // corresponde para ese tipo de unidad.
   tank_liters: number | null;
+  // Próximo service planificado: es un dato de la UNIDAD, no de cada orden
+  // de mantenimiento — una orden puntual registra un trabajo ya hecho, esto
+  // es "cuándo toca el que viene".
+  next_service_date: string | null;
+  next_service_km: number | null;
+  next_service_type: MaintenanceType | null;
+  next_service_notes: string | null;
+  // Dedup de avisos por Telegram del próximo service (mismo mecanismo que
+  // antes tenía cada orden, ver MaintenanceAlertCheckpoint).
+  service_alert_checkpoint: ServiceAlertCheckpoint | null;
+  service_alert_notified_at: string | null;
 }
 
 export interface FuelLoad {
@@ -307,13 +318,10 @@ export interface MaintenanceRecord {
   work: string;
   responsible: string | null;
   responsible_id: string | null;
-  target_date: string | null;
-  target_km: number | null;
   status: MaintenanceStatus;
   cost: number | null;
   notes: string | null;
-  // Km del vehículo al momento de hacer la reparación (distinto de
-  // target_km, que es el km al que está programado el PRÓXIMO service).
+  // Km del vehículo al momento de hacer la reparación.
   repair_km: number | null;
   // Proveedor / taller que hizo el trabajo.
   provider: string | null;
@@ -323,20 +331,28 @@ export interface MaintenanceRecord {
   created_at: string;
   completed_at: string | null;
   alert_notified_at: string | null;
-  // Hasta qué aviso fijo ya se mandó para esta orden: 15 días antes, 1
-  // semana antes, 1 día antes (mientras sigue "pendiente"), o el aviso
-  // único al asignado cuando ya está "en proceso".
+  // Deprecado: el próximo service ahora es un dato de la unidad
+  // (vehicles.next_service_date / next_service_km), no de la orden. Estas
+  // columnas quedan en la base por las órdenes viejas, pero la UI ya no las
+  // lee ni las escribe.
+  target_date: string | null;
+  target_km: number | null;
   alert_checkpoint: MaintenanceAlertCheckpoint | null;
 }
 
+// Deprecado junto con MaintenanceRecord.alert_checkpoint — ver ServiceAlertCheckpoint.
 export type MaintenanceAlertCheckpoint =
   | "15_dias"
   | "1_semana"
   | "1_dia"
   | "en_proceso_dia_antes";
 
-// Nivel de alerta visual calculado en el cliente comparando la fecha/km
-// objetivo contra hoy / el km actual del vehículo.
+// Dedup de avisos del próximo service de una unidad (vehicles.service_alert_checkpoint).
+export type ServiceAlertCheckpoint = "15_dias" | "1_semana" | "1_dia";
+
+// Nivel de alerta visual calculado en el cliente comparando la fecha/km del
+// próximo service (vehicles.next_service_date / next_service_km) contra hoy
+// / el km actual del vehículo.
 export type MaintenanceAlertLevel =
   | "completado"
   | "en_termino"

@@ -6,7 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { getMaintenanceAlertLevel, notifyResponsible } from "@/lib/maintenance";
+import { getVehicleServiceAlertLevel, notifyResponsible } from "@/lib/maintenance";
 import { MaintenanceDetailModal } from "@/components/MaintenanceDetailModal";
 import { MaintenancePreviewModal } from "@/components/MaintenancePreviewModal";
 import type {
@@ -17,14 +17,9 @@ import type {
   Profile,
   Vehicle,
 } from "@/lib/types";
-import {
-  MAINTENANCE_ALERT_LABELS,
-  MAINTENANCE_STATUS_LABELS,
-  MAINTENANCE_TYPE_LABELS,
-} from "@/lib/types";
+import { MAINTENANCE_ALERT_LABELS, MAINTENANCE_STATUS_LABELS, MAINTENANCE_TYPE_LABELS } from "@/lib/types";
 
-const ALERT_COLORS: Record<string, string> = {
-  completado: "bg-emerald-50 text-emerald-700",
+const SERVICE_ALERT_COLORS: Record<string, string> = {
   en_termino: "bg-emerald-50 text-emerald-700",
   proximo: "bg-amber-50 text-amber-700",
   muy_proximo: "bg-orange-50 text-orange-700",
@@ -45,19 +40,16 @@ function MantenimientoContent() {
   const [type, setType] = useState<MaintenanceType>("preventivo");
   const [work, setWork] = useState("");
   const [responsibleId, setResponsibleId] = useState("");
-  const [targetDate, setTargetDate] = useState("");
-  const [targetKm, setTargetKm] = useState("");
   const [cost, setCost] = useState("");
   const [detailRecord, setDetailRecord] = useState<MaintenanceRecord | null>(null);
   const [previewRecord, setPreviewRecord] = useState<MaintenanceRecord | null>(null);
 
-  // Si venimos desde Flota con "Programar service", preseleccionamos el
-  // vehículo y abrimos el formulario directo.
+  // Si venimos desde Flota con "Nueva orden", preseleccionamos el vehículo
+  // y abrimos el formulario directo.
   useEffect(() => {
     const preselected = searchParams.get("vehicle");
     if (preselected) {
       setVehicleId(preselected);
-      setWork("Service programado");
       setShowForm(true);
     }
   }, [searchParams]);
@@ -92,6 +84,8 @@ function MantenimientoContent() {
   const vehicleName = (id: string | null) =>
     id ? vehicles.find((v) => v.id === id)?.name ?? "—" : "—";
 
+  const vehicleFor = (id: string | null) => (id ? vehicles.find((v) => v.id === id) : undefined);
+
   const findingFor = (recordId: string) =>
     findings.find((f) => f.converted_maintenance_id === recordId) ?? null;
 
@@ -101,12 +95,7 @@ function MantenimientoContent() {
     setError(null);
 
     const responsiblePerson = personal.find((p) => p.id === responsibleId);
-    const targetKmValue = targetKm.trim() ? Number(targetKm) : null;
     const costValue = cost.trim() ? Number(cost) : null;
-    if (targetKm.trim() && Number.isNaN(targetKmValue)) {
-      setError("El km objetivo tiene que ser un número.");
-      return;
-    }
     if (cost.trim() && Number.isNaN(costValue)) {
       setError("El precio tiene que ser un número.");
       return;
@@ -119,8 +108,6 @@ function MantenimientoContent() {
       work: work.trim(),
       responsible_id: responsibleId || null,
       responsible: responsiblePerson?.full_name ?? null,
-      target_date: targetDate || null,
-      target_km: targetKmValue,
       cost: costValue,
       created_by: profile.id,
     });
@@ -137,8 +124,6 @@ function MantenimientoContent() {
         responsiblePerson,
         `🔧 <b>Se te asignó una orden de mantenimiento</b>\n` +
           `${work.trim()}${vehicleId ? " — " + vehicleName(vehicleId) : ""}\n` +
-          (targetDate ? `Fecha objetivo: ${targetDate}\n` : "") +
-          (targetKmValue != null ? `Km objetivo: ${targetKmValue.toLocaleString("es-AR")}\n` : "") +
           `Revisala en la app, sección Mantenimiento.`
       );
     }
@@ -146,8 +131,6 @@ function MantenimientoContent() {
     setVehicleId("");
     setWork("");
     setResponsibleId("");
-    setTargetDate("");
-    setTargetKm("");
     setCost("");
     setShowForm(false);
     load();
@@ -191,22 +174,6 @@ function MantenimientoContent() {
     load();
   };
 
-  const handleTargetDateUpdate = async (r: MaintenanceRecord, targetDateValue: string) => {
-    const newValue = targetDateValue || null;
-    // Antes esto se disparaba con cada click afuera del campo, aunque no se
-    // hubiera cambiado la fecha — y como reiniciaba el aviso ya mandado, eso
-    // era lo que hacía que llegaran avisos de mantenimiento duplicados. Ahora
-    // solo reinicia el aviso cuando la fecha realmente cambió (así, si la
-    // orden vuelve a acercarse al vencimiento, sí avisa de nuevo).
-    if (newValue === r.target_date) return;
-    const { error: updateError } = await supabase
-      .from("maintenance_records")
-      .update({ target_date: newValue, alert_checkpoint: null })
-      .eq("id", r.id);
-    if (updateError) setError(updateError.message);
-    load();
-  };
-
   const handleResponsibleChange = async (r: MaintenanceRecord, newResponsibleId: string) => {
     if (newResponsibleId === (r.responsible_id ?? "")) return;
     const responsiblePerson = personal.find((p) => p.id === newResponsibleId);
@@ -226,7 +193,6 @@ function MantenimientoContent() {
         responsiblePerson,
         `🔧 <b>Se te asignó una orden de mantenimiento</b>\n` +
           `${r.work}${r.vehicle_id ? " — " + vehicleName(r.vehicle_id) : ""}\n` +
-          (r.target_date ? `Fecha objetivo: ${r.target_date}\n` : "") +
           `Revisala en la app, sección Mantenimiento.`
       );
     }
@@ -330,26 +296,10 @@ function MantenimientoContent() {
             placeholder="Precio (opcional)"
             className="rounded-md border border-neutral-300 px-3 py-2"
           />
-          <label className="text-xs sm:col-span-2">
-            <span className="mb-1 block text-neutral-500">
-              Próximo service — por fecha y/o por km (lo que corresponda)
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="date"
-                value={targetDate}
-                onChange={(e) => setTargetDate(e.target.value)}
-                className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
-              />
-              <input
-                type="number"
-                value={targetKm}
-                onChange={(e) => setTargetKm(e.target.value)}
-                placeholder="Km objetivo"
-                className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
-              />
-            </div>
-          </label>
+          <p className="text-xs text-neutral-400 sm:col-span-2">
+            El próximo service programado (por fecha o km) se carga desde Flota, en los
+            datos de la unidad — no acá.
+          </p>
           <button
             type="submit"
             className="rounded-md bg-brand py-2 text-sm font-medium text-white hover:bg-brand-dark sm:col-span-2"
@@ -369,10 +319,8 @@ function MantenimientoContent() {
           </p>
         ) : (
           pending.map((r) => {
-            const level = getMaintenanceAlertLevel(
-              r,
-              vehicles.find((v) => v.id === r.vehicle_id)?.km
-            );
+            const vehicle = vehicleFor(r.vehicle_id);
+            const serviceLevel = vehicle ? getVehicleServiceAlertLevel(vehicle) : null;
             const finding = findingFor(r.id);
             return (
               <div key={r.id} className="rounded-xl border border-neutral-200 bg-white p-4">
@@ -390,33 +338,23 @@ function MantenimientoContent() {
                       {finding ? " · 🚧 desde un hallazgo" : ""}
                     </p>
                   </button>
-                  {!r.target_date && r.target_km == null ? (
-                    <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-500">
-                      Sin fecha/km definido
-                    </span>
-                  ) : (
-                    <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${ALERT_COLORS[level]}`}>
-                      {MAINTENANCE_ALERT_LABELS[level]}
+                  {serviceLevel && (
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${SERVICE_ALERT_COLORS[serviceLevel]}`}
+                      title="Próximo service programado para esta unidad"
+                    >
+                      {MAINTENANCE_ALERT_LABELS[serviceLevel]}
                     </span>
                   )}
                 </div>
 
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <label className="text-xs">
-                    <span className="mb-1 block text-neutral-500">Fecha objetivo</span>
-                    <input
-                      type="date"
-                      defaultValue={r.target_date ?? ""}
-                      onBlur={(e) => handleTargetDateUpdate(r, e.target.value)}
-                      className="w-full rounded-md border border-neutral-300 px-2 py-1"
-                    />
-                  </label>
+                <div className="mt-3">
                   <label className="text-xs">
                     <span className="mb-1 block text-neutral-500">Personal encargado</span>
                     <select
                       value={r.responsible_id ?? ""}
                       onChange={(e) => handleResponsibleChange(r, e.target.value)}
-                      className="w-full rounded-md border border-neutral-300 px-2 py-1"
+                      className="w-full rounded-md border border-neutral-300 px-2 py-1 sm:w-64"
                     >
                       <option value="">Sin asignar</option>
                       {personal.map((p) => (
@@ -544,6 +482,7 @@ function MantenimientoContent() {
             setDetailRecord(null);
             load();
           }}
+          onFindingChanged={() => load()}
         />
       )}
 

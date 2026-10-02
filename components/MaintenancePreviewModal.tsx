@@ -41,17 +41,6 @@ export function MaintenancePreviewModal({
           <Row label="Estado" value={MAINTENANCE_STATUS_LABELS[record.status]} />
           <Row label="Personal encargado" value={record.responsible ?? "—"} />
           <Row
-            label="Próximo service"
-            value={
-              [
-                record.target_date ? `Fecha: ${record.target_date}` : null,
-                record.target_km != null ? `Km: ${record.target_km.toLocaleString("es-AR")}` : null,
-              ]
-                .filter(Boolean)
-                .join(" · ") || "Sin definir"
-            }
-          />
-          <Row
             label="Km al reparar"
             value={record.repair_km != null ? record.repair_km.toLocaleString("es-AR") : "—"}
           />
