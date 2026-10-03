@@ -456,7 +456,7 @@ function MantenimientoContent() {
                     <td className="px-4 py-2">
                       <button
                         type="button"
-                        onClick={() => setDetailRecord(r)}
+                        onClick={() => setPreviewRecord(r)}
                         className="text-left text-neutral-800 hover:underline"
                       >
                         {r.work}

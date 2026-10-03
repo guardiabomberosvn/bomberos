@@ -7,6 +7,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { EditVehicleModal } from "@/components/EditVehicleModal";
 import { MaintenanceDetailModal } from "@/components/MaintenanceDetailModal";
+import { MaintenancePreviewModal } from "@/components/MaintenancePreviewModal";
 import { supabase } from "@/lib/supabase";
 import { getVehicleServiceAlertLevel } from "@/lib/maintenance";
 import type {
@@ -65,6 +66,7 @@ function FlotaContent() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [detailRecord, setDetailRecord] = useState<MaintenanceRecord | null>(null);
+  const [previewRecord, setPreviewRecord] = useState<MaintenanceRecord | null>(null);
   const [maintenanceSearch, setMaintenanceSearch] = useState("");
 
   const load = async () => {
@@ -223,6 +225,17 @@ function FlotaContent() {
 
   const findingFor = (recordId: string) =>
     findings.find((f) => f.converted_maintenance_id === recordId) ?? null;
+
+  // Una orden ya completada se abre en modo "solo ver" (no tiene sentido
+  // seguir editándola) — solo las que siguen pendientes/en proceso abren
+  // en modo edición.
+  const openRecord = (record: MaintenanceRecord) => {
+    if (record.status === "completado") {
+      setPreviewRecord(record);
+    } else {
+      setDetailRecord(record);
+    }
+  };
 
   // Historial de reparaciones de la unidad, con buscador por palabra clave
   // (ej: "frenos", "cubiertas", "service") contra el trabajo, tipo,
@@ -528,7 +541,7 @@ function FlotaContent() {
                               <li key={m.id}>
                                 <button
                                   type="button"
-                                  onClick={() => setDetailRecord(m)}
+                                  onClick={() => openRecord(m)}
                                   className="flex w-full items-start justify-between gap-2 py-1.5 text-left hover:bg-neutral-50"
                                 >
                                   <div>
@@ -590,7 +603,7 @@ function FlotaContent() {
                                 {record ? (
                                   <button
                                     type="button"
-                                    onClick={() => setDetailRecord(record)}
+                                    onClick={() => openRecord(record)}
                                     className="flex w-full items-start gap-2 text-left"
                                   >
                                     {body}
@@ -635,6 +648,14 @@ function FlotaContent() {
             load();
           }}
           onFindingChanged={() => load()}
+        />
+      )}
+
+      {previewRecord && (
+        <MaintenancePreviewModal
+          record={previewRecord}
+          vehicleName={vehicles.find((v) => v.id === previewRecord.vehicle_id)?.name ?? "—"}
+          onClose={() => setPreviewRecord(null)}
         />
       )}
     </div>
