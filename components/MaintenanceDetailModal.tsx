@@ -150,6 +150,21 @@ export function MaintenanceDetailModal({
               {linkedFinding.area ? `${linkedFinding.area} · ` : ""}
               Prioridad: {FINDING_PRIORITY_LABELS[linkedFinding.priority]}
             </p>
+            {linkedFinding.photo_url && (
+              <a
+                href={linkedFinding.photo_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 block"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={linkedFinding.photo_url}
+                  alt="Foto del hallazgo"
+                  className="max-h-48 rounded-md border border-amber-200 object-cover"
+                />
+              </a>
+            )}
             <div className="mt-2 flex flex-wrap gap-2">
               {linkedFinding.photo_url && (
                 <a
@@ -158,7 +173,7 @@ export function MaintenanceDetailModal({
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-50"
                 >
-                  📷 Ver foto del hallazgo
+                  📷 Ver foto completa
                 </a>
               )}
               <button

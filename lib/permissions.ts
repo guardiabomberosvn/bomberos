@@ -27,6 +27,7 @@ export type SectionKey =
   | "flota"
   | "combustible"
   | "mantenimiento"
+  | "proveedores"
   | "stock"
   | "personal"
   | "grupos"
@@ -64,6 +65,7 @@ export const SECTIONS: SectionDef[] = [
   { key: "flota", label: "Flota", icon: "🚒", href: "/flota", group: "operacion", legacyRoles: ["admin", "guardia"] },
   { key: "combustible", label: "Combustible", icon: "⛽", href: "/combustible", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
   { key: "mantenimiento", label: "Mantenimiento", icon: "🔧", href: "/mantenimiento", group: "operacion", legacyRoles: ["admin", "guardia"] },
+  { key: "proveedores", label: "Proveedores", icon: "📇", href: "/proveedores", group: "operacion", legacyRoles: ["admin", "guardia"] },
   // Personal: solo admin y guardia lo ven por defecto (antes también lo
   // veían los bomberos). Un admin puede seguir dándoselo puntualmente a
   // alguien desde Administración.

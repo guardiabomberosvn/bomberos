@@ -6,17 +6,24 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { EditVehicleModal } from "@/components/EditVehicleModal";
+import { MaintenanceDetailModal } from "@/components/MaintenanceDetailModal";
 import { supabase } from "@/lib/supabase";
 import { getVehicleServiceAlertLevel } from "@/lib/maintenance";
 import type {
   FuelLoad,
   MaintenanceFinding,
   MaintenanceRecord,
+  Profile,
   Vehicle,
   VehicleMovement,
   VehicleStatus,
 } from "@/lib/types";
-import { MAINTENANCE_ALERT_LABELS, MAINTENANCE_TYPE_LABELS, VEHICLE_STATUS_LABELS } from "@/lib/types";
+import {
+  MAINTENANCE_ALERT_LABELS,
+  MAINTENANCE_STATUS_LABELS,
+  MAINTENANCE_TYPE_LABELS,
+  VEHICLE_STATUS_LABELS,
+} from "@/lib/types";
 
 const SERVICE_ALERT_COLORS: Record<string, string> = {
   en_termino: "bg-emerald-50 text-emerald-700",
@@ -37,6 +44,8 @@ interface HistoryEntry {
   icon: string;
   label: string;
   detail?: string;
+  // Solo para entradas de mantenimiento: permite abrir el detalle al tocarlas.
+  recordId?: string;
 }
 
 function FlotaContent() {
@@ -48,12 +57,15 @@ function FlotaContent() {
   const [maintenance, setMaintenance] = useState<MaintenanceRecord[]>([]);
   const [fuelLoads, setFuelLoads] = useState<FuelLoad[]>([]);
   const [findings, setFindings] = useState<MaintenanceFinding[]>([]);
+  const [personal, setPersonal] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [type, setType] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  const [detailRecord, setDetailRecord] = useState<MaintenanceRecord | null>(null);
+  const [maintenanceSearch, setMaintenanceSearch] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -75,12 +87,18 @@ function FlotaContent() {
       .from("maintenance_findings")
       .select("*")
       .order("created_at", { ascending: false });
+    const { data: p } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("is_active", true)
+      .order("full_name");
 
     setVehicles((v as Vehicle[]) ?? []);
     setMovements((m as VehicleMovement[]) ?? []);
     setMaintenance((mt as MaintenanceRecord[]) ?? []);
     setFuelLoads((f as FuelLoad[]) ?? []);
     setFindings((fd as MaintenanceFinding[]) ?? []);
+    setPersonal((p as Profile[]) ?? []);
     setLoading(false);
   };
 
@@ -174,6 +192,7 @@ function FlotaContent() {
           icon: "🔧",
           label: `Mantenimiento: ${mt.work}`,
           detail: mt.status,
+          recordId: mt.id,
         });
       });
 
@@ -200,6 +219,30 @@ function FlotaContent() {
       });
 
     return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  };
+
+  const findingFor = (recordId: string) =>
+    findings.find((f) => f.converted_maintenance_id === recordId) ?? null;
+
+  // Historial de reparaciones de la unidad, con buscador por palabra clave
+  // (ej: "frenos", "cubiertas", "service") contra el trabajo, tipo,
+  // proveedor, quién lo reparó y notas — para encontrar rápido cuándo se
+  // hizo tal o cual cosa sin tener que leer orden por orden.
+  const buildMaintenanceHistory = (vehicleId: string) => {
+    const vehicleMaintenance = maintenance
+      .filter((m) => m.vehicle_id === vehicleId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    const query = maintenanceSearch.trim().toLowerCase();
+    if (!query) return vehicleMaintenance;
+
+    return vehicleMaintenance.filter((m) =>
+      [m.work, MAINTENANCE_TYPE_LABELS[m.type], m.provider, m.performed_by, m.notes]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(query)
+    );
   };
 
   // Resumen rápido del vehículo: todo lo que hoy está repartido entre
@@ -273,7 +316,10 @@ function FlotaContent() {
             return (
               <div key={v.id} className="rounded-xl border border-neutral-200 bg-white">
                 <button
-                  onClick={() => setExpanded(isExpanded ? null : v.id)}
+                  onClick={() => {
+                    setExpanded(isExpanded ? null : v.id);
+                    setMaintenanceSearch("");
+                  }}
                   className="flex w-full items-center justify-between px-4 py-3 text-left"
                 >
                   <div>
@@ -457,6 +503,62 @@ function FlotaContent() {
 
                     <div>
                       <p className="mb-1 text-xs font-semibold uppercase text-neutral-500">
+                        🔧 Reparaciones de mantenimiento
+                      </p>
+                      <input
+                        value={maintenanceSearch}
+                        onChange={(e) => setMaintenanceSearch(e.target.value)}
+                        placeholder="Buscar por palabra clave, ej: frenos, cubiertas, service"
+                        className="mb-2 w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+                      />
+                      {(() => {
+                        const results = buildMaintenanceHistory(v.id);
+                        if (results.length === 0) {
+                          return (
+                            <p className="text-sm text-neutral-500">
+                              {maintenanceSearch.trim()
+                                ? "Sin resultados para esa búsqueda."
+                                : "Sin reparaciones registradas todavía."}
+                            </p>
+                          );
+                        }
+                        return (
+                          <ul className="divide-y divide-neutral-100 text-sm">
+                            {results.map((m) => (
+                              <li key={m.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => setDetailRecord(m)}
+                                  className="flex w-full items-start justify-between gap-2 py-1.5 text-left hover:bg-neutral-50"
+                                >
+                                  <div>
+                                    <p className="text-neutral-800 hover:underline">{m.work}</p>
+                                    <p className="text-xs text-neutral-500">
+                                      {MAINTENANCE_TYPE_LABELS[m.type]} ·{" "}
+                                      {new Date(m.created_at).toLocaleDateString("es-AR")}
+                                      {m.provider ? ` · ${m.provider}` : ""}
+                                    </p>
+                                  </div>
+                                  <div className="shrink-0 text-right">
+                                    <p className="text-xs text-neutral-500">
+                                      {MAINTENANCE_STATUS_LABELS[m.status]}
+                                    </p>
+                                    {m.cost != null && (
+                                      <p className="text-xs font-medium text-neutral-700">
+                                        ${m.cost.toLocaleString("es-AR")}
+                                      </p>
+                                    )}
+                                  </div>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        );
+                      })()}
+                    </div>
+
+                    <div>
+                      <p className="mb-1 text-xs font-semibold uppercase text-neutral-500">
                         Historial completo
                       </p>
                       {history.length === 0 ? (
@@ -465,18 +567,40 @@ function FlotaContent() {
                         </p>
                       ) : (
                         <ul className="divide-y divide-neutral-100 text-sm">
-                          {history.slice(0, 20).map((h, i) => (
-                            <li key={i} className="flex items-start gap-2 py-1.5">
-                              <span>{h.icon}</span>
-                              <div>
-                                <p className="text-neutral-800">{h.label}</p>
-                                <p className="text-xs text-neutral-500">
-                                  {new Date(h.date).toLocaleString("es-AR")}
-                                  {h.detail ? ` · ${h.detail}` : ""}
-                                </p>
-                              </div>
-                            </li>
-                          ))}
+                          {history.slice(0, 20).map((h, i) => {
+                            const record = h.recordId
+                              ? maintenance.find((m) => m.id === h.recordId)
+                              : undefined;
+                            const body = (
+                              <>
+                                <span>{h.icon}</span>
+                                <div>
+                                  <p className={`text-neutral-800 ${record ? "hover:underline" : ""}`}>
+                                    {h.label}
+                                  </p>
+                                  <p className="text-xs text-neutral-500">
+                                    {new Date(h.date).toLocaleString("es-AR")}
+                                    {h.detail ? ` · ${h.detail}` : ""}
+                                  </p>
+                                </div>
+                              </>
+                            );
+                            return (
+                              <li key={i} className="py-1.5">
+                                {record ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setDetailRecord(record)}
+                                    className="flex w-full items-start gap-2 text-left"
+                                  >
+                                    {body}
+                                  </button>
+                                ) : (
+                                  <div className="flex items-start gap-2">{body}</div>
+                                )}
+                              </li>
+                            );
+                          })}
                         </ul>
                       )}
                     </div>
@@ -496,6 +620,21 @@ function FlotaContent() {
             setEditingVehicle(null);
             load();
           }}
+        />
+      )}
+
+      {detailRecord && (
+        <MaintenanceDetailModal
+          record={detailRecord}
+          vehicles={vehicles}
+          personal={personal}
+          linkedFinding={findingFor(detailRecord.id)}
+          onClose={() => setDetailRecord(null)}
+          onSaved={() => {
+            setDetailRecord(null);
+            load();
+          }}
+          onFindingChanged={() => load()}
         />
       )}
     </div>

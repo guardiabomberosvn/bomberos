@@ -216,6 +216,31 @@ export interface StockWithdrawal {
   shift_id: string | null;
 }
 
+export interface Supplier {
+  id: string;
+  organization_id: string;
+  name: string;
+  specialty: string | null;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupplierPurchase {
+  id: string;
+  organization_id: string;
+  supplier_id: string;
+  purchase_date: string;
+  amount: number | null;
+  description: string;
+  created_by: string | null;
+  created_at: string;
+}
+
 export interface OtherForceNotice {
   id: string;
   organization_id: string;
