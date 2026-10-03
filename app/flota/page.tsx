@@ -9,6 +9,7 @@ import { EditVehicleModal } from "@/components/EditVehicleModal";
 import { MaintenanceDetailModal } from "@/components/MaintenanceDetailModal";
 import { MaintenancePreviewModal } from "@/components/MaintenancePreviewModal";
 import { supabase } from "@/lib/supabase";
+import { exportMultiSheetExcel } from "@/lib/export";
 import { getVehicleServiceAlertLevel } from "@/lib/maintenance";
 import type {
   FuelLoad,
@@ -275,6 +276,63 @@ function FlotaContent() {
         .join(" ")
         .toLowerCase()
         .includes(query)
+    );
+  };
+
+  // Exporta a Excel los datos generales de la unidad (los mismos que se ven
+  // en su tarjeta) + su historial de mantenimiento, respetando el mismo
+  // rango de fechas (desde/hasta) y búsqueda que ya están elegidos arriba
+  // para esa unidad — así lo que se exporta es exactamente lo que se está
+  // mirando en pantalla, no siempre todo el histórico.
+  const handleExportVehicle = (v: Vehicle) => {
+    const history = buildMaintenanceHistory(v.id);
+    const periodLabel =
+      costFrom || costTo ? `${costFrom || "inicio"}_a_${costTo || "hoy"}` : "historial_completo";
+
+    exportMultiSheetExcel(
+      [
+        {
+          name: "Datos de la unidad",
+          rows: [
+            {
+              Nombre: v.name,
+              Tipo: v.type ?? "",
+              Estado: VEHICLE_STATUS_LABELS[v.status],
+              Marca: v.brand ?? "",
+              Modelo: v.model ?? "",
+              Patente: v.license_plate ?? "",
+              "Número de chasis": v.chassis_number ?? "",
+              "Número de motor": v.engine_number ?? "",
+              Kilometraje: v.km,
+              "Capacidad (litros)": v.tank_liters ?? "",
+              "Próximo service - fecha": v.next_service_date ?? "",
+              "Próximo service - km": v.next_service_km ?? "",
+              "Próximo service - tipo": v.next_service_type
+                ? MAINTENANCE_TYPE_LABELS[v.next_service_type]
+                : "",
+              "Próximo service - notas": v.next_service_notes ?? "",
+              Activa: v.is_active ? "Sí" : "No",
+            },
+          ],
+        },
+        {
+          name: "Mantenimiento",
+          rows: history.map((m) => ({
+            Tipo: MAINTENANCE_TYPE_LABELS[m.type],
+            Trabajo: m.work,
+            Estado: MAINTENANCE_STATUS_LABELS[m.status],
+            "Km al reparar": m.repair_km ?? "",
+            Precio: m.cost ?? "",
+            "Proveedor / taller": m.provider ?? "",
+            "Quién lo reparó": m.performed_by ?? "",
+            "Personal encargado": m.responsible ?? "",
+            Creado: new Date(m.created_at).toLocaleDateString("es-AR"),
+            Completado: m.completed_at ? new Date(m.completed_at).toLocaleDateString("es-AR") : "",
+            Notas: m.notes ?? "",
+          })),
+        },
+      ],
+      `${v.name}_${periodLabel}`.replace(/\s+/g, "_")
     );
   };
 
@@ -582,6 +640,13 @@ function FlotaContent() {
                           className="text-neutral-500 hover:underline"
                         >
                           Ver todo el historial
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleExportVehicle(v)}
+                          className="ml-auto font-medium text-brand hover:underline"
+                        >
+                          📥 Exportar esta unidad
                         </button>
                       </div>
                       {(() => {
