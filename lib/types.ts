@@ -13,6 +13,12 @@ export interface Profile {
   is_active: boolean;
   availability: Availability;
   telegram_chat_id: string | null;
+  // Código de 6 dígitos pendiente de confirmar por Telegram (ver
+  // /vincular-telegram): se genera y se guarda acá al entrar a esa
+  // pantalla, y el webhook de Telegram lo usa para vincular solo, sin
+  // tocar el webhook ni exponer el token del bot al navegador.
+  pending_telegram_code: string | null;
+  pending_telegram_code_created_at: string | null;
   notify_maintenance: boolean;
   // Permisos personalizados por usuario (apartado "Administración"). null =
   // usa el comportamiento por defecto de su rol (compatibilidad con

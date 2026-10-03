@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -145,9 +146,61 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // Cualquier otro tipo de update (mensajes de texto, etc.) simplemente se
-  // reconoce con 200 para que Telegram no marque el webhook como roto. La
-  // vinculación de una cuenta con Telegram se sigue haciendo a mano desde
-  // /vincular-telegram (botón "Ya envié el código").
+  // Vinculación de Telegram: cuando alguien le manda al bot el código de 6
+  // dígitos que le mostró /vincular-telegram, se linkea el chat_id al
+  // perfil que generó ese código — automático, sin que la persona tenga
+  // que volver a la app ni tocar ningún botón, y sin que haga falta sacar
+  // el webhook (antes esto se resolvía con "getUpdates" desde el
+  // navegador, que no puede convivir con el webhook activo).
+  if (update.message) {
+    const message = update.message as {
+      text?: string;
+      chat?: { id?: number };
+    };
+    const text = (message.text ?? "").trim();
+    const chatId = message.chat?.id;
+
+    if (chatId && /^\d{6}$/.test(text)) {
+      const CODE_TTL_MS = 10 * 60 * 1000;
+
+      const { data: candidates } = await supabase
+        .from("profiles")
+        .select("id, full_name, pending_telegram_code_created_at")
+        .eq("pending_telegram_code", text)
+        .order("pending_telegram_code_created_at", { ascending: false })
+        .limit(1);
+
+      const candidate = candidates?.[0];
+      const stillValid =
+        !!candidate?.pending_telegram_code_created_at &&
+        Date.now() - new Date(candidate.pending_telegram_code_created_at).getTime() < CODE_TTL_MS;
+
+      if (candidate && stillValid) {
+        await supabase
+          .from("profiles")
+          .update({
+            telegram_chat_id: String(chatId),
+            pending_telegram_code: null,
+            pending_telegram_code_created_at: null,
+          })
+          .eq("id", candidate.id);
+
+        await sendTelegramMessage(
+          String(chatId),
+          `✅ Listo, ${candidate.full_name}. Tu Telegram quedó vinculado a tu cuenta del sistema.`
+        );
+      } else {
+        await sendTelegramMessage(
+          String(chatId),
+          "Ese código no es válido o ya venció. Generá uno nuevo desde la app, en \"Vincular Telegram\"."
+        );
+      }
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  // Cualquier otro tipo de update se reconoce con 200 para que Telegram no
+  // marque el webhook como roto.
   return NextResponse.json({ ok: true });
 }

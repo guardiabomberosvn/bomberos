@@ -11,77 +11,52 @@ function generateCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+// Vinculación automática: el código se guarda en el propio perfil
+// (pending_telegram_code) y el webhook de Telegram (app/api/telegram-webhook)
+// lo reconoce apenas la persona se lo manda al bot, vinculando el chat_id
+// sin que haga falta volver a esta pantalla ni tocar ningún botón. Como
+// AuthProvider ya tiene una suscripción en vivo al propio perfil, en cuanto
+// el webhook actualiza telegram_chat_id esta pantalla lo detecta sola y
+// cambia de estado — no hace falta pedirlo ni refrescar.
 function VincularTelegramContent() {
   const { profile, refreshProfile } = useAuth();
-  const [code, setCode] = useState("");
-  const [checking, setChecking] = useState(false);
+  const [code, setCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const botUsername = getTelegramBotUsername();
 
-  useEffect(() => {
-    setCode(generateCode());
-  }, []);
-
-  const handleVerify = async () => {
+  const generateAndSave = async () => {
+    if (!profile) return;
+    setGenerating(true);
     setError(null);
-    setChecking(true);
-
-    const token = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN;
-    if (!token) {
-      setError("El bot de Telegram todavía no está configurado en el sistema.");
-      setChecking(false);
+    const newCode = generateCode();
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({
+        pending_telegram_code: newCode,
+        pending_telegram_code_created_at: new Date().toISOString(),
+      })
+      .eq("id", profile.id);
+    setGenerating(false);
+    if (updateError) {
+      setError(updateError.message);
       return;
     }
+    setCode(newCode);
+  };
 
-    try {
-      const res = await fetch(
-        `https://api.telegram.org/bot${token}/getUpdates?limit=50`
-      );
-      const data = await res.json();
-
-      if (!data.ok) {
-        setError("No se pudo consultar Telegram: " + data.description);
-        setChecking(false);
-        return;
-      }
-
-      const match = (data.result as any[])
-        .reverse()
-        .find((u) => u.message?.text?.trim() === code);
-
-      if (!match) {
-        setError(
-          "Todavía no encontramos tu mensaje. Verificá que lo hayas enviado al bot correcto y esperá unos segundos."
-        );
-        setChecking(false);
-        return;
-      }
-
-      const chatId = String(match.message.chat.id);
-
-      if (!profile) {
-        setError("No se pudo identificar tu usuario.");
-        setChecking(false);
-        return;
-      }
-
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({ telegram_chat_id: chatId })
-        .eq("id", profile.id);
-
-      setChecking(false);
-      if (updateError) {
-        setError(updateError.message);
-        return;
-      }
-      setSuccess(true);
-      await refreshProfile();
-    } catch (e) {
-      setChecking(false);
-      setError(e instanceof Error ? e.message : "Error desconocido");
+  useEffect(() => {
+    if (profile && !profile.telegram_chat_id && !code && !generating) {
+      generateAndSave();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
+
+  const handleUnlink = async () => {
+    if (!profile) return;
+    await supabase.from("profiles").update({ telegram_chat_id: null }).eq("id", profile.id);
+    await refreshProfile();
+    setCode(null);
   };
 
   return (
@@ -103,14 +78,7 @@ function VincularTelegramContent() {
             Vas a recibir las alarmas de emergencia por Telegram.
           </p>
           <button
-            onClick={async () => {
-              if (!profile) return;
-              await supabase
-                .from("profiles")
-                .update({ telegram_chat_id: null })
-                .eq("id", profile.id);
-              await refreshProfile();
-            }}
+            onClick={handleUnlink}
             className="mt-3 text-sm text-red-700 hover:underline"
           >
             Desvincular
@@ -121,11 +89,6 @@ function VincularTelegramContent() {
           {error && (
             <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
-            </div>
-          )}
-          {success && (
-            <div className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-              ¡Vinculado correctamente!
             </div>
           )}
 
@@ -150,18 +113,22 @@ function VincularTelegramContent() {
             <li>
               Después enviale exactamente este código:
               <div className="mt-1 rounded-md bg-neutral-100 px-4 py-3 text-center text-2xl font-bold tracking-widest text-neutral-900">
-                {code}
+                {code ?? "…"}
               </div>
             </li>
-            <li>Volvé acá y tocá "Ya envié el código".</li>
           </ol>
 
+          <div className="flex items-center gap-2 rounded-md bg-neutral-50 px-3 py-2 text-sm text-neutral-500">
+            <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-brand" />
+            Esperando que nos llegue el código… apenas lo recibamos, esto cambia solo.
+          </div>
+
           <button
-            onClick={handleVerify}
-            disabled={checking}
-            className="w-full rounded-md bg-brand py-2.5 font-medium text-white hover:bg-brand-dark disabled:opacity-60"
+            onClick={generateAndSave}
+            disabled={generating}
+            className="text-sm text-neutral-500 hover:underline disabled:opacity-60"
           >
-            {checking ? "Verificando…" : "Ya envié el código"}
+            {generating ? "Generando…" : "Generar otro código"}
           </button>
         </div>
       )}
