@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
+import { exportMultiSheetExcel } from "@/lib/export";
 import { getVehicleServiceAlertLevel, notifyResponsible } from "@/lib/maintenance";
 import { MaintenanceDetailModal } from "@/components/MaintenanceDetailModal";
 import { MaintenancePreviewModal } from "@/components/MaintenancePreviewModal";
@@ -43,6 +44,9 @@ function MantenimientoContent() {
   const [cost, setCost] = useState("");
   const [detailRecord, setDetailRecord] = useState<MaintenanceRecord | null>(null);
   const [previewRecord, setPreviewRecord] = useState<MaintenanceRecord | null>(null);
+  const [showExport, setShowExport] = useState(false);
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
 
   // Si venimos desde Flota con "Nueva orden", preseleccionamos el vehículo
   // y abrimos el formulario directo.
@@ -211,6 +215,65 @@ function MantenimientoContent() {
     load();
   };
 
+  // Exporta las órdenes de mantenimiento a Excel, con opción de acotar por
+  // fecha (desde/hasta, contra la fecha de creación de la orden). Sin
+  // fechas cargadas exporta todo el historial.
+  const handleExport = () => {
+    const from = exportFrom ? new Date(exportFrom + "T00:00:00").getTime() : null;
+    const to = exportTo ? new Date(exportTo + "T23:59:59").getTime() : null;
+    const filtered = records.filter((r) => {
+      const created = new Date(r.created_at).getTime();
+      if (from && created < from) return false;
+      if (to && created > to) return false;
+      return true;
+    });
+
+    const spentByVehicle = new Map<string, { total: number; count: number }>();
+    for (const r of filtered) {
+      if (!r.cost) continue;
+      const key = vehicleName(r.vehicle_id);
+      const entry = spentByVehicle.get(key) ?? { total: 0, count: 0 };
+      entry.total += r.cost;
+      entry.count += 1;
+      spentByVehicle.set(key, entry);
+    }
+
+    exportMultiSheetExcel(
+      [
+        {
+          name: "Órdenes de mantenimiento",
+          rows: filtered.map((r) => ({
+            Vehículo: vehicleName(r.vehicle_id),
+            Tipo: MAINTENANCE_TYPE_LABELS[r.type],
+            Trabajo: r.work,
+            Estado: MAINTENANCE_STATUS_LABELS[r.status],
+            "Km al reparar": r.repair_km ?? "",
+            Precio: r.cost ?? "",
+            "Proveedor / taller": r.provider ?? "",
+            "Quién lo reparó": r.performed_by ?? "",
+            "Personal encargado": r.responsible ?? "",
+            Creado: new Date(r.created_at).toLocaleDateString("es-AR"),
+            Completado: r.completed_at
+              ? new Date(r.completed_at).toLocaleDateString("es-AR")
+              : "",
+            Notas: r.notes ?? "",
+          })),
+        },
+        {
+          name: "Resumen por unidad",
+          rows: Array.from(spentByVehicle.entries())
+            .map(([vehicle, { total, count }]) => ({
+              Vehículo: vehicle,
+              "Cantidad de órdenes con precio": count,
+              "Total gastado": total,
+            }))
+            .sort((a, b) => b["Total gastado"] - a["Total gastado"]),
+        },
+      ],
+      "mantenimiento" + (exportFrom || exportTo ? `_${exportFrom || "inicio"}_a_${exportTo || "hoy"}` : "")
+    );
+  };
+
   const pending = records.filter((r) => r.status !== "completado");
   const completed = records.filter((r) => r.status === "completado");
 
@@ -218,13 +281,54 @@ function MantenimientoContent() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-neutral-900">Mantenimiento</h1>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-        >
-          + Nueva orden
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setShowExport((s) => !s)}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+          >
+            📥 Exportar
+          </button>
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+          >
+            + Nueva orden
+          </button>
+        </div>
       </div>
+
+      {showExport && (
+        <div className="flex flex-wrap items-end gap-2 rounded-xl border border-neutral-200 bg-white p-4">
+          <label className="text-xs text-neutral-500">
+            Desde
+            <input
+              type="date"
+              value={exportFrom}
+              onChange={(e) => setExportFrom(e.target.value)}
+              className="mt-0.5 block rounded-md border border-neutral-300 px-2 py-1 text-sm"
+            />
+          </label>
+          <label className="text-xs text-neutral-500">
+            Hasta
+            <input
+              type="date"
+              value={exportTo}
+              onChange={(e) => setExportTo(e.target.value)}
+              className="mt-0.5 block rounded-md border border-neutral-300 px-2 py-1 text-sm"
+            />
+          </label>
+          <button
+            onClick={handleExport}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+          >
+            Descargar Excel
+          </button>
+          <p className="w-full text-xs text-neutral-400">
+            Sin fechas, se exporta todo el historial. El archivo trae una hoja con cada orden y
+            otra con el total gastado por unidad en ese período.
+          </p>
+        </div>
+      )}
 
       <p className="text-xs text-neutral-400">
         El total gastado por unidad (por año, por rango de fechas o por palabra clave) se ve

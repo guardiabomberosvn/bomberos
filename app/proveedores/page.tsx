@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
+import { exportMultiSheetExcel } from "@/lib/export";
 import type { Supplier, SupplierPurchase } from "@/lib/types";
 
 function SupplierCard({
@@ -29,7 +30,19 @@ function SupplierCard({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const total = purchases.reduce((sum, p) => sum + (p.amount ?? 0), 0);
+  // Buscador de compras por fecha: por defecto sin filtro (se ve el total
+  // histórico), pero se puede acotar a un rango puntual o a "Este año" para
+  // ver cuánto se compró en un período específico.
+  const [costFrom, setCostFrom] = useState("");
+  const [costTo, setCostTo] = useState("");
+
+  const filteredPurchases = purchases.filter((p) => {
+    if (costFrom && p.purchase_date < costFrom) return false;
+    if (costTo && p.purchase_date > costTo) return false;
+    return true;
+  });
+  const total = filteredPurchases.reduce((sum, p) => sum + (p.amount ?? 0), 0);
+  const hasDateFilter = !!(costFrom || costTo);
 
   const handleCreatePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,9 +98,55 @@ function SupplierCard({
           {supplier.notes && <p className="mt-1 text-xs text-neutral-400">{supplier.notes}</p>}
         </div>
         <div className="text-right">
-          <p className="text-xs text-neutral-500">Total comprado</p>
+          <p className="text-xs text-neutral-500">
+            Total comprado{hasDateFilter ? " (en el período)" : ""}
+          </p>
           <p className="text-lg font-bold text-neutral-900">${total.toLocaleString("es-AR")}</p>
         </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <label className="text-xs text-neutral-500">
+          Desde
+          <input
+            type="date"
+            value={costFrom}
+            onChange={(e) => setCostFrom(e.target.value)}
+            className="mt-0.5 block rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          />
+        </label>
+        <label className="text-xs text-neutral-500">
+          Hasta
+          <input
+            type="date"
+            value={costTo}
+            onChange={(e) => setCostTo(e.target.value)}
+            className="mt-0.5 block rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            const year = new Date().getFullYear();
+            setCostFrom(`${year}-01-01`);
+            setCostTo(`${year}-12-31`);
+          }}
+          className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+        >
+          Este año
+        </button>
+        {hasDateFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setCostFrom("");
+              setCostTo("");
+            }}
+            className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100"
+          >
+            Ver todo
+          </button>
+        )}
       </div>
 
       {error && (
@@ -99,7 +158,7 @@ function SupplierCard({
           onClick={() => setExpanded((e) => !e)}
           className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
         >
-          {expanded ? "Ocultar historial" : `📜 Ver historial (${purchases.length})`}
+          {expanded ? "Ocultar historial" : `📜 Ver historial (${filteredPurchases.length})`}
         </button>
         <button
           onClick={() => setShowPurchaseForm((s) => !s)}
@@ -169,14 +228,16 @@ function SupplierCard({
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
-              {purchases.length === 0 ? (
+              {filteredPurchases.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-3 py-4 text-center text-neutral-500">
-                    Sin compras registradas todavía.
+                    {hasDateFilter
+                      ? "Sin compras en ese período."
+                      : "Sin compras registradas todavía."}
                   </td>
                 </tr>
               ) : (
-                purchases
+                filteredPurchases
                   .slice()
                   .sort((a, b) => (a.purchase_date < b.purchase_date ? 1 : -1))
                   .map((p) => (
@@ -230,6 +291,10 @@ function ProveedoresContent() {
   const [editEmail, setEditEmail] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
+  const [showExport, setShowExport] = useState(false);
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+
   const load = async () => {
     setLoading(true);
     const { data: s } = await supabase
@@ -263,6 +328,66 @@ function ProveedoresContent() {
   }, []);
 
   const purchasesFor = (supplierId: string) => purchases.filter((p) => p.supplier_id === supplierId);
+
+  const supplierName = (id: string) => suppliers.find((s) => s.id === id)?.name ?? "—";
+
+  // Exporta proveedores + compras a Excel. Las compras (y el resumen por
+  // proveedor) se pueden acotar por fecha; el listado de proveedores en sí
+  // sale siempre completo, ya que no tiene una fecha propia por la que
+  // filtrar.
+  const handleExport = () => {
+    const filteredPurchases = purchases.filter((p) => {
+      if (exportFrom && p.purchase_date < exportFrom) return false;
+      if (exportTo && p.purchase_date > exportTo) return false;
+      return true;
+    });
+
+    const totalsBySupplier = new Map<string, { total: number; count: number }>();
+    for (const p of filteredPurchases) {
+      if (!p.amount) continue;
+      const key = supplierName(p.supplier_id);
+      const entry = totalsBySupplier.get(key) ?? { total: 0, count: 0 };
+      entry.total += p.amount;
+      entry.count += 1;
+      totalsBySupplier.set(key, entry);
+    }
+
+    exportMultiSheetExcel(
+      [
+        {
+          name: "Proveedores",
+          rows: suppliers.map((s) => ({
+            Nombre: s.name,
+            Especialidad: s.specialty ?? "",
+            "Persona de contacto": s.contact_name ?? "",
+            Teléfono: s.phone ?? "",
+            Correo: s.email ?? "",
+            Notas: s.notes ?? "",
+          })),
+        },
+        {
+          name: "Compras",
+          rows: filteredPurchases.map((p) => ({
+            Fecha: new Date(p.purchase_date + "T00:00:00").toLocaleDateString("es-AR"),
+            Proveedor: supplierName(p.supplier_id),
+            "Qué se compró": p.description,
+            Monto: p.amount ?? "",
+          })),
+        },
+        {
+          name: "Resumen por proveedor",
+          rows: Array.from(totalsBySupplier.entries())
+            .map(([proveedor, { total, count }]) => ({
+              Proveedor: proveedor,
+              "Cantidad de compras": count,
+              "Total comprado": total,
+            }))
+            .sort((a, b) => b["Total comprado"] - a["Total comprado"]),
+        },
+      ],
+      "proveedores" + (exportFrom || exportTo ? `_${exportFrom || "inicio"}_a_${exportTo || "hoy"}` : "")
+    );
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -340,13 +465,54 @@ function ProveedoresContent() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-neutral-900">Proveedores</h1>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-        >
-          + Nuevo proveedor
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setShowExport((s) => !s)}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+          >
+            📥 Exportar
+          </button>
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+          >
+            + Nuevo proveedor
+          </button>
+        </div>
       </div>
+
+      {showExport && (
+        <div className="flex flex-wrap items-end gap-2 rounded-xl border border-neutral-200 bg-white p-4">
+          <label className="text-xs text-neutral-500">
+            Desde
+            <input
+              type="date"
+              value={exportFrom}
+              onChange={(e) => setExportFrom(e.target.value)}
+              className="mt-0.5 block rounded-md border border-neutral-300 px-2 py-1 text-sm"
+            />
+          </label>
+          <label className="text-xs text-neutral-500">
+            Hasta
+            <input
+              type="date"
+              value={exportTo}
+              onChange={(e) => setExportTo(e.target.value)}
+              className="mt-0.5 block rounded-md border border-neutral-300 px-2 py-1 text-sm"
+            />
+          </label>
+          <button
+            onClick={handleExport}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+          >
+            Descargar Excel
+          </button>
+          <p className="w-full text-xs text-neutral-400">
+            El rango de fechas acota las compras (y su resumen por proveedor); el listado de
+            proveedores sale completo siempre. Sin fechas, exporta todo el historial de compras.
+          </p>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
