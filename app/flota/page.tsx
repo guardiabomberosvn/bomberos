@@ -68,6 +68,12 @@ function FlotaContent() {
   const [detailRecord, setDetailRecord] = useState<MaintenanceRecord | null>(null);
   const [previewRecord, setPreviewRecord] = useState<MaintenanceRecord | null>(null);
   const [maintenanceSearch, setMaintenanceSearch] = useState("");
+  // Por defecto el gastado se cuenta desde el 1° de enero del año en curso
+  // (así en enero vuelve solo a $0 y arranca de nuevo), pero se puede
+  // ampliar a cualquier rango con los campos "Desde"/"Hasta".
+  const defaultCostFrom = () => `${new Date().getFullYear()}-01-01`;
+  const [costFrom, setCostFrom] = useState(defaultCostFrom);
+  const [costTo, setCostTo] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -238,13 +244,27 @@ function FlotaContent() {
   };
 
   // Historial de reparaciones de la unidad, con buscador por palabra clave
-  // (ej: "frenos", "cubiertas", "service") contra el trabajo, tipo,
-  // proveedor, quién lo reparó y notas — para encontrar rápido cuándo se
-  // hizo tal o cual cosa sin tener que leer orden por orden.
+  // (ej: "frenos", "cubiertas", "service") y por rango de fechas (desde/
+  // hasta) — por defecto el rango arranca el 1° de enero del año en curso,
+  // así el total de abajo cuenta solo lo del año actual y no todo lo
+  // histórico, pero se puede ampliar o acotar a mano.
   const buildMaintenanceHistory = (vehicleId: string) => {
-    const vehicleMaintenance = maintenance
+    let vehicleMaintenance = maintenance
       .filter((m) => m.vehicle_id === vehicleId)
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    if (costFrom) {
+      const from = new Date(costFrom + "T00:00:00").getTime();
+      vehicleMaintenance = vehicleMaintenance.filter(
+        (m) => new Date(m.created_at).getTime() >= from
+      );
+    }
+    if (costTo) {
+      const to = new Date(costTo + "T23:59:59").getTime();
+      vehicleMaintenance = vehicleMaintenance.filter(
+        (m) => new Date(m.created_at).getTime() <= to
+      );
+    }
 
     const query = maintenanceSearch.trim().toLowerCase();
     if (!query) return vehicleMaintenance;
@@ -273,7 +293,6 @@ function FlotaContent() {
       movementsCount: vehicleMovements.length,
       maintenancePending: vehicleMaintenance.filter((m) => m.status !== "completado").length,
       maintenanceDone: vehicleMaintenance.filter((m) => m.status === "completado").length,
-      maintenanceCost: vehicleMaintenance.reduce((sum, m) => sum + (m.cost ?? 0), 0),
       findingsPending: vehicleFindings.filter((f) => f.status === "pendiente").length,
     };
   };
@@ -332,6 +351,8 @@ function FlotaContent() {
                   onClick={() => {
                     setExpanded(isExpanded ? null : v.id);
                     setMaintenanceSearch("");
+                    setCostFrom(defaultCostFrom());
+                    setCostTo("");
                   }}
                   className="flex w-full items-center justify-between px-4 py-3 text-left"
                 >
@@ -500,9 +521,6 @@ function FlotaContent() {
                           </p>
                           <p className="text-xs text-neutral-500">
                             {summary.maintenanceDone} completado{summary.maintenanceDone === 1 ? "" : "s"}
-                            {summary.maintenanceCost > 0
-                              ? ` · $${summary.maintenanceCost.toLocaleString("es-AR")}`
-                              : ""}
                           </p>
                         </div>
                         <div>
@@ -524,48 +542,100 @@ function FlotaContent() {
                         placeholder="Buscar por palabra clave, ej: frenos, cubiertas, service"
                         className="mb-2 w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
                       />
+                      <div className="mb-2 grid grid-cols-2 gap-2">
+                        <label className="block text-xs text-neutral-500">
+                          Desde
+                          <input
+                            type="date"
+                            value={costFrom}
+                            onChange={(e) => setCostFrom(e.target.value)}
+                            className="mt-0.5 w-full rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                          />
+                        </label>
+                        <label className="block text-xs text-neutral-500">
+                          Hasta
+                          <input
+                            type="date"
+                            value={costTo}
+                            onChange={(e) => setCostTo(e.target.value)}
+                            className="mt-0.5 w-full rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                          />
+                        </label>
+                      </div>
+                      <div className="mb-2 flex flex-wrap gap-2 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCostFrom(defaultCostFrom());
+                            setCostTo("");
+                          }}
+                          className="text-brand hover:underline"
+                        >
+                          Año actual
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCostFrom("");
+                            setCostTo("");
+                          }}
+                          className="text-neutral-500 hover:underline"
+                        >
+                          Ver todo el historial
+                        </button>
+                      </div>
                       {(() => {
                         const results = buildMaintenanceHistory(v.id);
-                        if (results.length === 0) {
-                          return (
-                            <p className="text-sm text-neutral-500">
-                              {maintenanceSearch.trim()
-                                ? "Sin resultados para esa búsqueda."
-                                : "Sin reparaciones registradas todavía."}
-                            </p>
-                          );
-                        }
+                        const total = results.reduce((sum, m) => sum + (m.cost ?? 0), 0);
                         return (
-                          <ul className="divide-y divide-neutral-100 text-sm">
-                            {results.map((m) => (
-                              <li key={m.id}>
-                                <button
-                                  type="button"
-                                  onClick={() => openRecord(m)}
-                                  className="flex w-full items-start justify-between gap-2 py-1.5 text-left hover:bg-neutral-50"
-                                >
-                                  <div>
-                                    <p className="text-neutral-800 hover:underline">{m.work}</p>
-                                    <p className="text-xs text-neutral-500">
-                                      {MAINTENANCE_TYPE_LABELS[m.type]} ·{" "}
-                                      {new Date(m.created_at).toLocaleDateString("es-AR")}
-                                      {m.provider ? ` · ${m.provider}` : ""}
-                                    </p>
-                                  </div>
-                                  <div className="shrink-0 text-right">
-                                    <p className="text-xs text-neutral-500">
-                                      {MAINTENANCE_STATUS_LABELS[m.status]}
-                                    </p>
-                                    {m.cost != null && (
-                                      <p className="text-xs font-medium text-neutral-700">
-                                        ${m.cost.toLocaleString("es-AR")}
-                                      </p>
-                                    )}
-                                  </div>
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
+                          <>
+                            <div className="mb-2 flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2">
+                              <span className="text-xs text-neutral-500">
+                                Gastado en el período
+                              </span>
+                              <span className="text-sm font-bold text-neutral-900">
+                                ${total.toLocaleString("es-AR")}
+                              </span>
+                            </div>
+                            {results.length === 0 ? (
+                              <p className="text-sm text-neutral-500">
+                                {maintenanceSearch.trim() || costFrom || costTo
+                                  ? "Sin resultados para ese filtro."
+                                  : "Sin reparaciones registradas todavía."}
+                              </p>
+                            ) : (
+                              <ul className="divide-y divide-neutral-100 text-sm">
+                                {results.map((m) => (
+                                  <li key={m.id}>
+                                    <button
+                                      type="button"
+                                      onClick={() => openRecord(m)}
+                                      className="flex w-full items-start justify-between gap-2 py-1.5 text-left hover:bg-neutral-50"
+                                    >
+                                      <div>
+                                        <p className="text-neutral-800 hover:underline">{m.work}</p>
+                                        <p className="text-xs text-neutral-500">
+                                          {MAINTENANCE_TYPE_LABELS[m.type]} ·{" "}
+                                          {new Date(m.created_at).toLocaleDateString("es-AR")}
+                                          {m.provider ? ` · ${m.provider}` : ""}
+                                        </p>
+                                      </div>
+                                      <div className="shrink-0 text-right">
+                                        <p className="text-xs text-neutral-500">
+                                          {MAINTENANCE_STATUS_LABELS[m.status]}
+                                        </p>
+                                        {m.cost != null && (
+                                          <p className="text-xs font-medium text-neutral-700">
+                                            ${m.cost.toLocaleString("es-AR")}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </>
                         );
                       })()}
                     </div>

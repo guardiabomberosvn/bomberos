@@ -214,24 +214,6 @@ function MantenimientoContent() {
   const pending = records.filter((r) => r.status !== "completado");
   const completed = records.filter((r) => r.status === "completado");
 
-  // Antes esto era un solo total combinado de toda la flota. Ahora se
-  // desglosa por unidad para poder comparar cuánto se gastó en cada una.
-  const spentByVehicle = (() => {
-    const totals = new Map<string, number>();
-    for (const r of records) {
-      if (!r.cost) continue;
-      const key = r.vehicle_id ?? "sin_unidad";
-      totals.set(key, (totals.get(key) ?? 0) + r.cost);
-    }
-    return Array.from(totals.entries())
-      .map(([key, total]) => ({
-        key,
-        name: key === "sin_unidad" ? "Sin unidad asignada" : vehicleName(key),
-        total,
-      }))
-      .sort((a, b) => b.total - a.total);
-  })();
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -244,21 +226,10 @@ function MantenimientoContent() {
         </button>
       </div>
 
-      {spentByVehicle.length > 0 && (
-        <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
-          <p className="text-xs text-neutral-500">Gastado en mantenimiento por unidad</p>
-          <ul className="mt-2 divide-y divide-neutral-100">
-            {spentByVehicle.map((v) => (
-              <li key={v.key} className="flex items-center justify-between py-1.5 text-sm">
-                <span className="text-neutral-700">{v.name}</span>
-                <span className="font-semibold text-neutral-900">
-                  ${v.total.toLocaleString("es-AR")}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <p className="text-xs text-neutral-400">
+        El total gastado por unidad (por año, por rango de fechas o por palabra clave) se ve
+        en Flota, dentro de cada vehículo.
+      </p>
 
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
