@@ -57,7 +57,9 @@ function LibroGuardiaContent() {
         ))}
       </div>
 
-      {tab === "turno" && profile && <TurnoTab myId={profile.id} />}
+      {tab === "turno" && profile && (
+        <TurnoTab myId={profile.id} isAdmin={profile.role === "admin"} />
+      )}
       {tab === "llamadas" && profile && <LlamadasTab myId={profile.id} />}
       {tab === "intervenciones" && profile && <IntervencionesContent />}
       {tab === "avisos" && profile && <AvisosTab myId={profile.id} />}
@@ -69,7 +71,7 @@ function LibroGuardiaContent() {
 }
 
 // ---------- Turno de guardia ----------
-function TurnoTab({ myId }: { myId: string }) {
+function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
   const [openShift, setOpenShift] = useState<GuardShift | null>(null);
   const [recentShifts, setRecentShifts] = useState<GuardShift[]>([]);
   const [names, setNames] = useState<Map<string, string>>(new Map());
@@ -192,6 +194,7 @@ function TurnoTab({ myId }: { myId: string }) {
   };
 
   const handleDeleteShift = async (shift: GuardShift) => {
+    if (!isAdmin) return;
     if (
       !window.confirm(
         "¿Eliminar este turno del historial? Esta acción no se puede deshacer."
@@ -320,12 +323,14 @@ function TurnoTab({ myId }: { myId: string }) {
                   </p>
                   {s.notes && <p className="mt-1 text-neutral-600">{s.notes}</p>}
                 </div>
-                <button
-                  onClick={() => handleDeleteShift(s)}
-                  className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                >
-                  Eliminar
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => handleDeleteShift(s)}
+                    className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                  >
+                    Eliminar
+                  </button>
+                )}
               </li>
             ))}
           </ul>
