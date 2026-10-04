@@ -131,6 +131,37 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
   // realmente de guardia, más allá de con qué cuenta se cargó.
   const [openedByName, setOpenedByName] = useState("");
   const [closedByName, setClosedByName] = useState("");
+  // Búsqueda por día en "Turnos anteriores": consulta aparte a la tabla
+  // completa (no se limita a los últimos 10 como la carga normal), para
+  // poder encontrar un turno viejo sin importar cuántos haya.
+  const [searchDate, setSearchDate] = useState("");
+  const [searchResults, setSearchResults] = useState<GuardShift[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const runSearch = async (date: string) => {
+    if (!date) {
+      setSearchResults(null);
+      return;
+    }
+    setSearching(true);
+    const dayStart = new Date(date);
+    const dayEnd = new Date(date);
+    dayEnd.setHours(23, 59, 59, 999);
+    const { data } = await supabase
+      .from("guard_shifts")
+      .select("*")
+      .gte("opened_at", dayStart.toISOString())
+      .lte("opened_at", dayEnd.toISOString())
+      .order("opened_at", { ascending: false });
+    setSearchResults((data as GuardShift[]) ?? []);
+    setSearching(false);
+  };
+
+  useEffect(() => {
+    runSearch(searchDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchDate]);
 
   const load = async () => {
     setLoading(true);
@@ -173,6 +204,39 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
     const h = Math.floor(mins / 60);
     const m = mins % 60;
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  const formatShiftDuration = (startIso: string, endIso: string | null) => {
+    const start = new Date(startIso).getTime();
+    const end = endIso ? new Date(endIso).getTime() : Date.now();
+    const mins = Math.max(0, Math.round((end - start) / 60000));
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  // Exporta el historial COMPLETO de turnos (no solo los últimos 10 que se
+  // muestran en pantalla) — consulta aparte a la tabla entera.
+  const handleExportHistory = async () => {
+    setExporting(true);
+    const { data, error: fetchError } = await supabase
+      .from("guard_shifts")
+      .select("*")
+      .order("opened_at", { ascending: false });
+    setExporting(false);
+    if (fetchError) {
+      setError(fetchError.message);
+      return;
+    }
+    const rows = ((data as GuardShift[]) ?? []).map((s) => ({
+      "Abierto por": s.opened_by_name || nameOf(s.opened_by),
+      Apertura: new Date(s.opened_at).toLocaleString("es-AR"),
+      "Cerrado por": s.closed_at ? s.closed_by_name || nameOf(s.closed_by ?? "") : "—",
+      Cierre: s.closed_at ? new Date(s.closed_at).toLocaleString("es-AR") : "En curso",
+      Duración: formatShiftDuration(s.opened_at, s.closed_at),
+      Novedades: s.notes ?? "",
+    }));
+    exportToExcel(rows, "turnos-de-guardia", "Turnos");
   };
 
   const handleOpen = async () => {
@@ -252,6 +316,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
       .eq("id", shift.id);
     if (deleteError) setError(deleteError.message);
     load();
+    if (searchDate) runSearch(searchDate);
   };
 
   return (
@@ -345,40 +410,82 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
         </div>
       )}
 
-      {recentShifts.length > 0 && (
+      {(recentShifts.length > 0 || searchDate) && (
         <div className="rounded-xl border border-neutral-200 bg-white">
-          <div className="border-b border-neutral-200 px-4 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-4 py-2">
             <p className="text-sm font-semibold text-neutral-700">Turnos anteriores</p>
-          </div>
-          <ul className="divide-y divide-neutral-100">
-            {recentShifts.map((s) => (
-              <li key={s.id} className="flex items-start justify-between gap-2 px-4 py-3 text-sm">
-                <div>
-                  <p className="font-medium text-neutral-800">
-                    {s.opened_by_name || nameOf(s.opened_by)}
-                    {s.closed_at &&
-                    (s.closed_by_name || nameOf(s.closed_by ?? "")) !==
-                      (s.opened_by_name || nameOf(s.opened_by))
-                      ? ` → cerrado por ${s.closed_by_name || nameOf(s.closed_by ?? "")}`
-                      : ""}
-                  </p>
-                  <p className="text-xs text-neutral-500">
-                    {new Date(s.opened_at).toLocaleString("es-AR")}
-                    {s.closed_at ? ` — ${new Date(s.closed_at).toLocaleString("es-AR")}` : ""}
-                  </p>
-                  {s.notes && <p className="mt-1 text-neutral-600">{s.notes}</p>}
-                </div>
-                {isAdmin && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1">
+                <span className="text-sm text-neutral-400" aria-hidden>
+                  🔍
+                </span>
+                <input
+                  type="date"
+                  value={searchDate}
+                  onChange={(e) => setSearchDate(e.target.value)}
+                  aria-label="Buscar turno por día"
+                  className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700"
+                />
+                {searchDate && (
                   <button
-                    onClick={() => handleDeleteShift(s)}
-                    className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                    type="button"
+                    onClick={() => setSearchDate("")}
+                    className="text-xs font-medium text-neutral-400 hover:text-neutral-600"
+                    title="Borrar búsqueda"
                   >
-                    Eliminar
+                    ✕
                   </button>
                 )}
-              </li>
-            ))}
-          </ul>
+              </div>
+              <button
+                onClick={handleExportHistory}
+                disabled={exporting}
+                className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+              >
+                {exporting ? "Exportando…" : "📥 Exportar Excel"}
+              </button>
+            </div>
+          </div>
+
+          {searching ? (
+            <p className="px-4 py-4 text-sm text-neutral-500">Buscando…</p>
+          ) : (searchDate ? searchResults ?? [] : recentShifts).length === 0 ? (
+            <p className="px-4 py-4 text-sm text-neutral-500">
+              {searchDate
+                ? "No se encontró ningún turno ese día."
+                : "Todavía no hay turnos cerrados."}
+            </p>
+          ) : (
+            <ul className="divide-y divide-neutral-100">
+              {(searchDate ? searchResults ?? [] : recentShifts).map((s) => (
+                <li key={s.id} className="flex items-start justify-between gap-2 px-4 py-3 text-sm">
+                  <div>
+                    <p className="font-medium text-neutral-800">
+                      {s.opened_by_name || nameOf(s.opened_by)}
+                      {s.closed_at &&
+                      (s.closed_by_name || nameOf(s.closed_by ?? "")) !==
+                        (s.opened_by_name || nameOf(s.opened_by))
+                        ? ` → cerrado por ${s.closed_by_name || nameOf(s.closed_by ?? "")}`
+                        : ""}
+                    </p>
+                    <p className="text-xs text-neutral-500">
+                      {new Date(s.opened_at).toLocaleString("es-AR")}
+                      {s.closed_at ? ` — ${new Date(s.closed_at).toLocaleString("es-AR")}` : " — en curso"}
+                    </p>
+                    {s.notes && <p className="mt-1 text-neutral-600">{s.notes}</p>}
+                  </div>
+                  {isAdmin && (
+                    <button
+                      onClick={() => handleDeleteShift(s)}
+                      className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                    >
+                      Eliminar
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>
