@@ -30,6 +30,9 @@ function AsistenciaGeneralContent() {
   // puede llegar a ver esta pantalla si se le habilita puntualmente, pero
   // nunca estos controles.
   const canManage = profile?.role === "admin" || profile?.role === "guardia";
+  // Borrar un registro de asistencia (no solo cerrarlo) queda solo para
+  // admin — pensado para limpiar pruebas, no para el uso diario.
+  const isAdmin = profile?.role === "admin";
   // Ver el resumen de horas/puntos y el ranking "Puntaje por persona" es un
   // permiso aparte (ver lib/permissions.ts) — tener acceso a esta página no
   // lo habilita solo.
@@ -344,6 +347,19 @@ function AsistenciaGeneralContent() {
       .update({ checked_out_at: new Date().toISOString() })
       .eq("id", row.id);
     if (updateError) setError(updateError.message);
+    load();
+  };
+
+  const handleDeleteRecord = async (row: Row) => {
+    const label = `${row.profile?.full_name ?? "esta persona"} — ${new Date(
+      row.checked_in_at
+    ).toLocaleString("es-AR")}`;
+    if (!window.confirm(`¿Eliminar este registro de asistencia (${label})? No se puede deshacer.`)) {
+      return;
+    }
+    setError(null);
+    const { error: deleteError } = await supabase.from("attendance").delete().eq("id", row.id);
+    if (deleteError) setError(deleteError.message);
     load();
   };
 
@@ -797,6 +813,14 @@ function AsistenciaGeneralContent() {
                         >
                           + Observación
                         </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleDeleteRecord(r)}
+                            className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                          >
+                            Eliminar
+                          </button>
+                        )}
                       </div>
                     </td>
                   )}
