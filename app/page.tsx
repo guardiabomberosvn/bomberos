@@ -56,6 +56,31 @@ export default function HomePage() {
     }
 
     setSubmitting(true);
+
+    // Chequeo previo del legajo: si ya está en uso, avisamos en el acto con
+    // un mensaje claro en vez de intentar crear la cuenta y que falle más
+    // abajo con un error genérico de la base de datos que no dice nada.
+    if (legajo.trim()) {
+      try {
+        const checkRes = await fetch("/api/check-legajo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ legajo: legajo.trim() }),
+        });
+        const checkData = await checkRes.json();
+        if (checkData.exists) {
+          setSubmitting(false);
+          setError(
+            `Ya existe una persona con el legajo "${legajo.trim()}". Elegí otro número.`
+          );
+          return;
+        }
+      } catch {
+        // Si el chequeo falla (sin conexión, etc.), seguimos igual — el
+        // alta puede fallar más abajo y ahí se muestra el mensaje de reserva.
+      }
+    }
+
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
@@ -285,6 +310,16 @@ function traducirError(message: string): string {
   }
   if (message.includes("Email not confirmed")) {
     return "Falta confirmar el email. Revisá tu correo.";
+  }
+  if (message.includes("email rate limit exceeded")) {
+    return "Se mandaron demasiados correos en poco tiempo. Esperá un rato y probá de nuevo.";
+  }
+  if (message.includes("Database error saving new user")) {
+    // El chequeo previo del legajo (más arriba, en handleRegister) ya
+    // debería atajar el caso más común, pero dejamos esto como red de
+    // contención por si pasa igual (ej: dos personas cargando el mismo
+    // legajo al mismo tiempo).
+    return "No se pudo crear la cuenta. Si pusiste un número de legajo, puede que ya esté en uso — probá con otro o dejalo vacío.";
   }
   return message;
 }
