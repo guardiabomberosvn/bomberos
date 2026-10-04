@@ -23,9 +23,44 @@ import { MOVEMENT_REASON_LABELS, OTHER_FORCE_SERVICES } from "@/lib/types";
 
 type Tab = "turno" | "llamadas" | "avisos" | "visitas" | "movimientos" | "agenda" | "intervenciones";
 
+function ShiftRequiredNotice() {
+  return (
+    <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      Tenés que abrir turno en la pestaña "Turno" antes de poder registrar o
+      modificar algo acá.
+    </div>
+  );
+}
+
 function LibroGuardiaContent() {
   const { profile } = useAuth();
   const [tab, setTab] = useState<Tab>("turno");
+  // Un guardia tiene que haber abierto turno antes de poder usar Llamadas,
+  // Avisos, Visitas, Movimientos o Agenda — admin y jefatura no dependen de
+  // esto (por ejemplo para corregir algo fuera de horario). Se consulta acá
+  // arriba, una sola vez, y se pasa a cada pestaña.
+  const [openShift, setOpenShift] = useState<GuardShift | null>(null);
+  const isGuardiaRole = profile?.role === "guardia";
+  const blockedByShift = isGuardiaRole && !openShift;
+
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase
+        .from("guard_shifts")
+        .select("*")
+        .is("closed_at", null)
+        .maybeSingle();
+      setOpenShift((data as GuardShift) ?? null);
+    };
+    load();
+    const channel = supabase
+      .channel("libro-guardia-shift")
+      .on("postgres_changes", { event: "*", schema: "public", table: "guard_shifts" }, () => load())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -60,12 +95,22 @@ function LibroGuardiaContent() {
       {tab === "turno" && profile && (
         <TurnoTab myId={profile.id} isAdmin={profile.role === "admin"} />
       )}
-      {tab === "llamadas" && profile && <LlamadasTab myId={profile.id} />}
+      {tab === "llamadas" && profile && (
+        <LlamadasTab myId={profile.id} blockedByShift={blockedByShift} />
+      )}
       {tab === "intervenciones" && profile && <IntervencionesContent />}
-      {tab === "avisos" && profile && <AvisosTab myId={profile.id} />}
-      {tab === "visitas" && profile && <VisitasTab myId={profile.id} />}
-      {tab === "movimientos" && profile && <MovimientosTab myId={profile.id} />}
-      {tab === "agenda" && profile && <AgendaTab myId={profile.id} />}
+      {tab === "avisos" && profile && (
+        <AvisosTab myId={profile.id} blockedByShift={blockedByShift} />
+      )}
+      {tab === "visitas" && profile && (
+        <VisitasTab myId={profile.id} blockedByShift={blockedByShift} />
+      )}
+      {tab === "movimientos" && profile && (
+        <MovimientosTab myId={profile.id} blockedByShift={blockedByShift} />
+      )}
+      {tab === "agenda" && profile && (
+        <AgendaTab myId={profile.id} blockedByShift={blockedByShift} />
+      )}
     </div>
   );
 }
@@ -341,7 +386,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
 }
 
 // ---------- Llamadas ----------
-function LlamadasTab({ myId }: { myId: string }) {
+function LlamadasTab({ myId, blockedByShift }: { myId: string; blockedByShift: boolean }) {
   const [calls, setCalls] = useState<GuardCall[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -451,12 +496,14 @@ function LlamadasTab({ myId }: { myId: string }) {
         >
           📥 Exportar
         </button>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-        >
-          + Registrar llamada
-        </button>
+        {!blockedByShift && (
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+          >
+            + Registrar llamada
+          </button>
+        )}
       </div>
 
       {error && (
@@ -465,7 +512,9 @@ function LlamadasTab({ myId }: { myId: string }) {
         </div>
       )}
 
-      {showForm && (
+      {blockedByShift && <ShiftRequiredNotice />}
+
+      {showForm && !blockedByShift && (
         <form
           onSubmit={handleCreate}
           className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2"
@@ -545,22 +594,24 @@ function LlamadasTab({ myId }: { myId: string }) {
                     {new Date(c.created_at).toLocaleString("es-AR")}
                   </td>
                   <td className="px-4 py-2">
-                    <div className="flex gap-2">
-                      {c.status !== "cerrada" && (
+                    {!blockedByShift && (
+                      <div className="flex gap-2">
+                        {c.status !== "cerrada" && (
+                          <button
+                            onClick={() => handleClose(c)}
+                            className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                          >
+                            Cerrar
+                          </button>
+                        )}
                         <button
-                          onClick={() => handleClose(c)}
-                          className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                          onClick={() => handleDeleteCall(c)}
+                          className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
                         >
-                          Cerrar
+                          Eliminar
                         </button>
-                      )}
-                      <button
-                        onClick={() => handleDeleteCall(c)}
-                        className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                      >
-                        Eliminar
-                      </button>
-                    </div>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))
@@ -578,7 +629,7 @@ const AVISOS_MESES = [
   "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
 ];
 
-function AvisosTab({ myId }: { myId: string }) {
+function AvisosTab({ myId, blockedByShift }: { myId: string; blockedByShift: boolean }) {
   const [notices, setNotices] = useState<OtherForceNotice[]>([]);
   const [names, setNames] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -726,17 +777,21 @@ function AvisosTab({ myId }: { myId: string }) {
         >
           📥 Exportar
         </button>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-        >
-          + Registrar aviso
-        </button>
+        {!blockedByShift && (
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+          >
+            + Registrar aviso
+          </button>
+        )}
       </div>
 
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
       )}
+
+      {blockedByShift && <ShiftRequiredNotice />}
 
       <div className="rounded-xl border border-neutral-200 bg-white">
         <button
@@ -764,7 +819,7 @@ function AvisosTab({ myId }: { myId: string }) {
         )}
       </div>
 
-      {showForm && (
+      {showForm && !blockedByShift && (
         <form
           onSubmit={handleCreate}
           className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2"
@@ -879,12 +934,14 @@ function AvisosTab({ myId }: { myId: string }) {
                   </td>
                   <td className="px-4 py-2 text-neutral-600">{receivedByLabel(n)}</td>
                   <td className="px-4 py-2">
-                    <button
-                      onClick={() => handleDelete(n)}
-                      className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                    >
-                      Eliminar
-                    </button>
+                    {!blockedByShift && (
+                      <button
+                        onClick={() => handleDelete(n)}
+                        className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                      >
+                        Eliminar
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))
@@ -897,7 +954,7 @@ function AvisosTab({ myId }: { myId: string }) {
 }
 
 // ---------- Proveedores y visitas ----------
-function VisitasTab({ myId }: { myId: string }) {
+function VisitasTab({ myId, blockedByShift }: { myId: string; blockedByShift: boolean }) {
   const [visits, setVisits] = useState<GuardVisit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -969,13 +1026,17 @@ function VisitasTab({ myId }: { myId: string }) {
   return (
     <div className="space-y-4 pt-4">
       <div className="flex justify-end">
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-        >
-          + Registrar visita
-        </button>
+        {!blockedByShift && (
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+          >
+            + Registrar visita
+          </button>
+        )}
       </div>
+
+      {blockedByShift && <ShiftRequiredNotice />}
 
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -983,7 +1044,7 @@ function VisitasTab({ myId }: { myId: string }) {
         </div>
       )}
 
-      {showForm && (
+      {showForm && !blockedByShift && (
         <form
           onSubmit={handleCreate}
           className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2"
@@ -1019,12 +1080,14 @@ function VisitasTab({ myId }: { myId: string }) {
             {inside.map((v) => (
               <li key={v.id} className="flex items-center justify-between">
                 <span>{v.visitor_name}</span>
-                <button
-                  onClick={() => handleExit(v)}
-                  className="rounded-md border border-neutral-400 bg-white px-2 py-1 text-xs font-medium hover:bg-neutral-100"
-                >
-                  Marcar egreso
-                </button>
+                {!blockedByShift && (
+                  <button
+                    onClick={() => handleExit(v)}
+                    className="rounded-md border border-neutral-400 bg-white px-2 py-1 text-xs font-medium hover:bg-neutral-100"
+                  >
+                    Marcar egreso
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -1067,12 +1130,14 @@ function VisitasTab({ myId }: { myId: string }) {
                     {v.exited_at ? new Date(v.exited_at).toLocaleString("es-AR") : "—"}
                   </td>
                   <td className="px-4 py-2">
-                    <button
-                      onClick={() => handleDeleteVisit(v)}
-                      className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                    >
-                      Eliminar
-                    </button>
+                    {!blockedByShift && (
+                      <button
+                        onClick={() => handleDeleteVisit(v)}
+                        className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                      >
+                        Eliminar
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))
@@ -1085,7 +1150,7 @@ function VisitasTab({ myId }: { myId: string }) {
 }
 
 // ---------- Movimientos de vehículos ----------
-function MovimientosTab({ myId }: { myId: string }) {
+function MovimientosTab({ myId, blockedByShift }: { myId: string; blockedByShift: boolean }) {
   const [movements, setMovements] = useState<VehicleMovement[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [personal, setPersonal] = useState<Profile[]>([]);
@@ -1198,13 +1263,17 @@ function MovimientosTab({ myId }: { myId: string }) {
   return (
     <div className="space-y-4 pt-4">
       <div className="flex justify-end">
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-        >
-          + Registrar salida
-        </button>
+        {!blockedByShift && (
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+          >
+            + Registrar salida
+          </button>
+        )}
       </div>
+
+      {blockedByShift && <ShiftRequiredNotice />}
 
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -1218,7 +1287,7 @@ function MovimientosTab({ myId }: { myId: string }) {
         </p>
       )}
 
-      {showForm && (
+      {showForm && !blockedByShift && (
         <form
           onSubmit={handleCreate}
           className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2"
@@ -1321,22 +1390,24 @@ function MovimientosTab({ myId }: { myId: string }) {
                     )}
                   </td>
                   <td className="px-4 py-2">
-                    <div className="flex gap-2">
-                      {!m.returned_at && (
+                    {!blockedByShift && (
+                      <div className="flex gap-2">
+                        {!m.returned_at && (
+                          <button
+                            onClick={() => openReturnModal(m)}
+                            className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                          >
+                            Marcar regreso
+                          </button>
+                        )}
                         <button
-                          onClick={() => openReturnModal(m)}
-                          className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                          onClick={() => handleDeleteMovement(m)}
+                          className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
                         >
-                          Marcar regreso
+                          Eliminar
                         </button>
-                      )}
-                      <button
-                        onClick={() => handleDeleteMovement(m)}
-                        className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                      >
-                        Eliminar
-                      </button>
-                    </div>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))
@@ -1406,7 +1477,7 @@ function MovimientosTab({ myId }: { myId: string }) {
 }
 
 // ---------- Agenda ----------
-function AgendaTab({ myId }: { myId: string }) {
+function AgendaTab({ myId, blockedByShift }: { myId: string; blockedByShift: boolean }) {
   const [events, setEvents] = useState<AgendaEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1472,13 +1543,17 @@ function AgendaTab({ myId }: { myId: string }) {
   return (
     <div className="space-y-4 pt-4">
       <div className="flex justify-end">
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-        >
-          + Nuevo evento
-        </button>
+        {!blockedByShift && (
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+          >
+            + Nuevo evento
+          </button>
+        )}
       </div>
+
+      {blockedByShift && <ShiftRequiredNotice />}
 
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -1486,7 +1561,7 @@ function AgendaTab({ myId }: { myId: string }) {
         </div>
       )}
 
-      {showForm && (
+      {showForm && !blockedByShift && (
         <form
           onSubmit={handleCreate}
           className="space-y-3 rounded-xl border border-neutral-200 bg-white p-4"
@@ -1546,12 +1621,14 @@ function AgendaTab({ myId }: { myId: string }) {
                         <p className="mt-1 text-neutral-600">{e.description}</p>
                       )}
                     </div>
-                    <button
-                      onClick={() => handleDeleteEvent(e.id)}
-                      className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                    >
-                      Eliminar
-                    </button>
+                    {!blockedByShift && (
+                      <button
+                        onClick={() => handleDeleteEvent(e.id)}
+                        className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                      >
+                        Eliminar
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>

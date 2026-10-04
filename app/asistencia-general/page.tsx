@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
@@ -26,13 +27,18 @@ function toLocalInputValue(iso: string | null) {
 function AsistenciaGeneralContent() {
   const { profile } = useAuth();
   // La carga rápida, la carga retroactiva y las acciones sobre registros
-  // ajenos son para quien está de guardia (guardia o admin) — un bombero
-  // puede llegar a ver esta pantalla si se le habilita puntualmente, pero
-  // nunca estos controles.
-  const canManage = profile?.role === "admin" || profile?.role === "guardia";
-  // Borrar un registro de asistencia (no solo cerrarlo) queda solo para
-  // admin — pensado para limpiar pruebas, no para el uso diario.
-  const isAdmin = profile?.role === "admin";
+  // ajenos son para quien está de guardia (guardia, jefatura o admin) — un
+  // bombero puede llegar a ver esta pantalla si se le habilita puntualmente,
+  // pero nunca estos controles.
+  const canManage =
+    profile?.role === "admin" || profile?.role === "guardia" || profile?.role === "jefatura";
+  // Borrar un registro de asistencia (no solo cerrarlo) queda para admin y
+  // jefatura — pensado para limpiar pruebas, no para el uso diario de guardia.
+  const canDeleteAttendance = profile?.role === "admin" || profile?.role === "jefatura";
+  // Un guardia tiene que haber abierto turno en el Libro de Guardia antes de
+  // poder tocar nada acá (carga rápida, retroactiva, cerrar o anotar algo
+  // ajeno) — admin y jefatura no dependen de esto.
+  const isGuardiaRole = profile?.role === "guardia";
   // Ver el resumen de horas/puntos y el ranking "Puntaje por persona" es un
   // permiso aparte (ver lib/permissions.ts) — tener acceso a esta página no
   // lo habilita solo.
@@ -60,6 +66,7 @@ function AsistenciaGeneralContent() {
   const [manualCheckIn, setManualCheckIn] = useState("");
   const [manualCheckOut, setManualCheckOut] = useState("");
   const [manualNotes, setManualNotes] = useState("");
+  const [manualCloseAt, setManualCloseAt] = useState("");
   const [editingRow, setEditingRow] = useState<Row | null>(null);
   const [observationText, setObservationText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -129,6 +136,11 @@ function AsistenciaGeneralContent() {
       personal.find((p) => p.id === openShift.opened_by)?.full_name ||
       null
     : null;
+
+  // Un guardia solo puede operar si hay turno abierto; admin y jefatura
+  // pueden siempre (por ejemplo para corregir algo fuera de horario).
+  const canOperateNow = canManage && (!isGuardiaRole || !!openShift);
+  const guardiaBlockedByShift = isGuardiaRole && !openShift;
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -269,6 +281,13 @@ function AsistenciaGeneralContent() {
     [personal, openByPerson]
   );
 
+  // Si la persona elegida en la carga retroactiva ya tiene un ingreso
+  // abierto, no corresponde cargarle otro — lo que hace falta es ponerle
+  // la hora de salida a ESE registro (que es, en la mayoría de los casos,
+  // justo el motivo por el que se está usando esta carga retroactiva: se
+  // olvidó de marcar la salida).
+  const existingOpenForManual = manualPersonId ? openByPerson.get(manualPersonId) ?? null : null;
+
   const handleQuickCheckIn = async (personId: string) => {
     if (!quickReasonId) {
       setError("Elegí un motivo antes de confirmar el ingreso.");
@@ -335,6 +354,49 @@ function AsistenciaGeneralContent() {
     setManualReasonId("");
     setManualCheckIn("");
     setManualCheckOut("");
+    setManualNotes("");
+    setShowManualForm(false);
+    load();
+  };
+
+  // Ponerle la salida a un ingreso que ya estaba abierto (se olvidó de
+  // marcar la salida) — actualiza ESE registro en vez de crear uno nuevo.
+  const handleManualCloseExisting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!existingOpenForManual || !manualCloseAt) {
+      setError("Elegí la hora de salida.");
+      return;
+    }
+    if (new Date(manualCloseAt) < new Date(existingOpenForManual.checked_in_at)) {
+      setError("La hora de salida no puede ser anterior a la del ingreso que ya tiene registrado.");
+      return;
+    }
+    setError(null);
+    setSaving(true);
+
+    const extraNote = manualNotes.trim()
+      ? `Carga retroactiva: se olvidó de marcar la salida. ${manualNotes.trim()}`
+      : "Carga retroactiva: se olvidó de marcar la salida.";
+
+    const { error: updateError } = await supabase
+      .from("attendance")
+      .update({
+        checked_out_at: new Date(manualCloseAt).toISOString(),
+        loaded_by_name: guardName,
+        shift_id: openShift?.id ?? existingOpenForManual.shift_id,
+        notes: existingOpenForManual.notes
+          ? `${existingOpenForManual.notes} | ${extraNote}`
+          : extraNote,
+      })
+      .eq("id", existingOpenForManual.id);
+
+    setSaving(false);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    setManualPersonId("");
+    setManualCloseAt("");
     setManualNotes("");
     setShowManualForm(false);
     load();
@@ -410,7 +472,7 @@ function AsistenciaGeneralContent() {
           >
             📥 Exportar Excel
           </button>
-          {canManage && (
+          {canOperateNow && (
             <button
               onClick={() => setShowManualForm((s) => !s)}
               className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
@@ -427,7 +489,17 @@ function AsistenciaGeneralContent() {
         </div>
       )}
 
-      {canManage && !openShift && (
+      {guardiaBlockedByShift && (
+        <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Tenés que abrir turno en el Libro de Guardia antes de poder cargar
+          o modificar asistencia.{" "}
+          <Link href="/libro-guardia" className="font-semibold underline">
+            Ir a Libro de Guardia
+          </Link>
+        </div>
+      )}
+
+      {canManage && !isGuardiaRole && !openShift && (
         <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
           No hay ningún turno de guardia abierto en el Libro de Guardia. Lo
           que cargues acá va a quedar sin nombre de guardia hasta que
@@ -435,7 +507,7 @@ function AsistenciaGeneralContent() {
         </div>
       )}
 
-      {canManage && (
+      {canOperateNow && (
         <div className="rounded-xl border border-neutral-200 bg-white p-4">
           <p className="mb-3 text-sm font-semibold text-neutral-800">
             Carga rápida
@@ -529,73 +601,102 @@ function AsistenciaGeneralContent() {
         </div>
       )}
 
-      {showManualForm && canManage && (
+      {showManualForm && canOperateNow && (
         <form
-          onSubmit={handleManualSubmit}
+          onSubmit={existingOpenForManual ? handleManualCloseExisting : handleManualSubmit}
           className="space-y-3 rounded-xl border border-neutral-200 bg-white p-4"
         >
           <p className="text-sm font-medium text-neutral-700">
             Carga retroactiva — para cuando alguien se olvidó de marcar (la
             carga rápida de arriba es la forma normal de registrar asistencia)
           </p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="block text-sm">
-              <span className="mb-1 block font-medium text-neutral-700">
-                Persona
-              </span>
-              <select
-                value={manualPersonId}
-                onChange={(e) => setManualPersonId(e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-2"
-              >
-                <option value="">Elegí…</option>
-                {personal.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.full_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block font-medium text-neutral-700">
-                Motivo
-              </span>
-              <select
-                value={manualReasonId}
-                onChange={(e) => setManualReasonId(e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-2"
-              >
-                <option value="">Elegí…</option>
-                {reasons.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block font-medium text-neutral-700">
-                Hora de ingreso
-              </span>
-              <input
-                type="datetime-local"
-                value={manualCheckIn}
-                onChange={(e) => setManualCheckIn(e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-2"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block font-medium text-neutral-700">
-                Hora de salida (opcional)
-              </span>
-              <input
-                type="datetime-local"
-                value={manualCheckOut}
-                onChange={(e) => setManualCheckOut(e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-2"
-              />
-            </label>
-          </div>
+
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-neutral-700">
+              Persona
+            </span>
+            <select
+              value={manualPersonId}
+              onChange={(e) => {
+                setManualPersonId(e.target.value);
+                setManualCloseAt("");
+              }}
+              className="w-full rounded-md border border-neutral-300 px-3 py-2 sm:w-1/2"
+            >
+              <option value="">Elegí…</option>
+              {personal.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {existingOpenForManual ? (
+            <>
+              <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Ya tiene un ingreso abierto desde el{" "}
+                {new Date(existingOpenForManual.checked_in_at).toLocaleString("es-AR")}.
+                Elegí la hora en la que en realidad se fue, para ponerle la salida a ese
+                mismo registro (no se crea uno nuevo).
+              </p>
+              <label className="block text-sm sm:w-1/2">
+                <span className="mb-1 block font-medium text-neutral-700">
+                  Hora de salida
+                </span>
+                <input
+                  type="datetime-local"
+                  value={manualCloseAt}
+                  onChange={(e) => setManualCloseAt(e.target.value)}
+                  className="w-full rounded-md border border-neutral-300 px-3 py-2"
+                />
+              </label>
+            </>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-neutral-700">
+                  Motivo
+                </span>
+                <select
+                  value={manualReasonId}
+                  onChange={(e) => setManualReasonId(e.target.value)}
+                  className="w-full rounded-md border border-neutral-300 px-3 py-2"
+                >
+                  <option value="">Elegí…</option>
+                  {reasons.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div />
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-neutral-700">
+                  Hora de ingreso
+                </span>
+                <input
+                  type="datetime-local"
+                  value={manualCheckIn}
+                  onChange={(e) => setManualCheckIn(e.target.value)}
+                  className="w-full rounded-md border border-neutral-300 px-3 py-2"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-neutral-700">
+                  Hora de salida (opcional)
+                </span>
+                <input
+                  type="datetime-local"
+                  value={manualCheckOut}
+                  onChange={(e) => setManualCheckOut(e.target.value)}
+                  className="w-full rounded-md border border-neutral-300 px-3 py-2"
+                />
+              </label>
+            </div>
+          )}
+
           <label className="block text-sm">
             <span className="mb-1 block font-medium text-neutral-700">
               Observación (opcional)
@@ -613,7 +714,11 @@ function AsistenciaGeneralContent() {
             disabled={saving}
             className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-60"
           >
-            {saving ? "Guardando…" : "Guardar registro"}
+            {saving
+              ? "Guardando…"
+              : existingOpenForManual
+              ? "Guardar salida"
+              : "Guardar registro"}
           </button>
         </form>
       )}
@@ -751,7 +856,7 @@ function AsistenciaGeneralContent() {
               <th className="px-4 py-3 font-medium">Duración</th>
               <th className="px-4 py-3 font-medium">Cargado por</th>
               <th className="px-4 py-3 font-medium">Observaciones</th>
-              {canManage && <th className="px-4 py-3 font-medium">Acciones</th>}
+              {canOperateNow && <th className="px-4 py-3 font-medium">Acciones</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
@@ -793,7 +898,7 @@ function AsistenciaGeneralContent() {
                     {r.loaded_by_name ?? "Se registró solo/a"}
                   </td>
                   <td className="px-4 py-3 text-xs text-neutral-500">{r.notes ?? "—"}</td>
-                  {canManage && (
+                  {canOperateNow && (
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         {!r.checked_out_at && (
@@ -813,7 +918,7 @@ function AsistenciaGeneralContent() {
                         >
                           + Observación
                         </button>
-                        {isAdmin && (
+                        {canDeleteAttendance && (
                           <button
                             onClick={() => handleDeleteRecord(r)}
                             className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"

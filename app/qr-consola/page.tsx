@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import QRCode from "qrcode";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { EmergencySiren } from "@/components/EmergencySiren";
-import type { Emergency } from "@/lib/types";
+import type { Emergency, GuardShift } from "@/lib/types";
 
 // El QR se renueva cada 45 segundos: así una foto vieja del código no sirve
 // para siempre, y si alguien lo comparte fuera del cuartel deja de ser válido rápido.
@@ -22,7 +23,43 @@ function QrConsolaContent() {
     { name: string; action: string; time: string }[]
   >([]);
   const [activeEmergencies, setActiveEmergencies] = useState<Emergency[]>([]);
+  const [openShift, setOpenShift] = useState<GuardShift | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
   const tokenRef = useRef<string | null>(null);
+
+  // Un guardia tiene que haber abierto turno en el Libro de Guardia antes de
+  // poder generar el QR de la consola — admin y jefatura no dependen de esto.
+  const isGuardiaRole = profile?.role === "guardia";
+  const blockedByShift = isGuardiaRole && !openShift;
+
+  useEffect(() => {
+    if (!profile) return;
+
+    const loadShift = async () => {
+      setShiftLoading(true);
+      const { data } = await supabase
+        .from("guard_shifts")
+        .select("*")
+        .is("closed_at", null)
+        .maybeSingle();
+      setOpenShift((data as GuardShift) ?? null);
+      setShiftLoading(false);
+    };
+    loadShift();
+
+    const shiftChannel = supabase
+      .channel("qr-consola-shift")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "guard_shifts" },
+        () => loadShift()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(shiftChannel);
+    };
+  }, [profile]);
 
   useEffect(() => {
     if (!profile) return;
@@ -51,7 +88,7 @@ function QrConsolaContent() {
   }, [profile]);
 
   const generateSession = useCallback(async () => {
-    if (!profile) return;
+    if (!profile || blockedByShift) return;
     setError(null);
 
     const expiresAt = new Date(Date.now() + SESSION_SECONDS * 1000);
@@ -77,7 +114,7 @@ function QrConsolaContent() {
     });
     setQrDataUrl(url);
     setSecondsLeft(SESSION_SECONDS);
-  }, [profile]);
+  }, [profile, blockedByShift]);
 
   useEffect(() => {
     generateSession();
@@ -153,6 +190,25 @@ function QrConsolaContent() {
   }, [profile]);
 
   const progress = (secondsLeft / SESSION_SECONDS) * 100;
+
+  if (!shiftLoading && blockedByShift) {
+    return (
+      <div className="-mx-4 -my-7 flex min-h-[calc(100vh-6.5rem)] flex-col items-center justify-center gap-3 rounded-2xl bg-ink-950 px-6 py-10 text-center text-white sm:-mx-6">
+        <p className="text-2xl">🔒</p>
+        <h1 className="text-xl font-semibold">Abrí turno antes de generar el QR</h1>
+        <p className="max-w-sm text-sm text-ink-400">
+          Tenés que abrir turno en el Libro de Guardia antes de poder usar la
+          consola de asistencia.
+        </p>
+        <Link
+          href="/libro-guardia"
+          className="mt-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-ink-950"
+        >
+          Ir a Libro de Guardia
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="-mx-4 -my-7 min-h-[calc(100vh-6.5rem)] rounded-2xl bg-ink-950 px-6 py-10 text-white sm:-mx-6">
