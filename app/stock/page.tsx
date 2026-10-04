@@ -13,6 +13,10 @@ type SubTab = "stock" | "retiros";
 
 function StockContent() {
   const { profile } = useAuth();
+  // Dar de baja un insumo y eliminar un retiro quedan solo para el
+  // administrador — un guardia puede seguir agregando insumos nuevos,
+  // recargando stock y registrando retiros normalmente.
+  const isAdmin = profile?.role === "admin";
   const [subTab, setSubTab] = useState<SubTab>("stock");
   const [items, setItems] = useState<StockItem[]>([]);
   const [withdrawals, setWithdrawals] = useState<StockWithdrawal[]>([]);
@@ -168,7 +172,7 @@ function StockContent() {
   };
 
   const handleDeleteItem = async (item: StockItem) => {
-    if (blockedByShift) return;
+    if (blockedByShift || !isAdmin) return;
     if (
       !window.confirm(
         `¿Dar de baja "${item.name}"? No se borra el historial de retiros, pero deja de aparecer en el listado.`
@@ -221,7 +225,7 @@ function StockContent() {
   };
 
   const handleDeleteWithdrawal = async (w: StockWithdrawal) => {
-    if (blockedByShift) return;
+    if (blockedByShift || !isAdmin) return;
     if (!window.confirm("¿Eliminar este retiro? El stock se recalcula automáticamente.")) return;
     const { error: deleteError } = await supabase.from("stock_withdrawals").delete().eq("id", w.id);
     if (deleteError) setError(deleteError.message);
@@ -435,12 +439,14 @@ function StockContent() {
                               >
                                 Recargar / editar
                               </button>
-                              <button
-                                onClick={() => handleDeleteItem(i)}
-                                className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                              >
-                                Dar de baja
-                              </button>
+                              {isAdmin && (
+                                <button
+                                  onClick={() => handleDeleteItem(i)}
+                                  className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                                >
+                                  Dar de baja
+                                </button>
+                              )}
                             </div>
                           )}
                         </td>
@@ -566,7 +572,7 @@ function StockContent() {
                       <td className="px-4 py-2 text-neutral-600">{w.withdrawn_by ?? "—"}</td>
                       <td className="px-4 py-2 text-neutral-600">{w.destination ?? "—"}</td>
                       <td className="px-4 py-2">
-                        {!blockedByShift && (
+                        {isAdmin && (
                           <button
                             onClick={() => handleDeleteWithdrawal(w)}
                             className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
