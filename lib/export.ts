@@ -36,3 +36,45 @@ export async function exportMultiSheetExcel(
   }
   XLSX.writeFile(workbook, filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`);
 }
+
+/**
+ * Descarga un archivo .pdf con una tabla (encabezado + filas), pensado para
+ * listados para imprimir o archivar (ej: historial de turnos, asistencia).
+ * Igual que con "xlsx", "jspdf"/"jspdf-autotable" se importan acá adentro
+ * (import dinámico) para no pesar el resto de la app.
+ */
+export async function exportToPdf(
+  rows: Record<string, string | number | null | undefined>[],
+  filename: string,
+  opts: { title?: string; subtitle?: string } = {}
+) {
+  const { jsPDF } = await import("jspdf");
+  const { autoTable } = await import("jspdf-autotable");
+  const doc = new jsPDF({ orientation: "landscape" });
+
+  let cursorY = 14;
+  if (opts.title) {
+    doc.setFontSize(14);
+    doc.text(opts.title, 14, cursorY);
+    cursorY += 6;
+  }
+  if (opts.subtitle) {
+    doc.setFontSize(10);
+    doc.setTextColor(120);
+    doc.text(opts.subtitle, 14, cursorY);
+    cursorY += 4;
+  }
+
+  const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+  const body = rows.map((row) => headers.map((h) => String(row[h] ?? "")));
+
+  autoTable(doc, {
+    head: [headers],
+    body,
+    startY: cursorY + 2,
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [220, 38, 38] },
+  });
+
+  doc.save(filename.endsWith(".pdf") ? filename : `${filename}.pdf`);
+}

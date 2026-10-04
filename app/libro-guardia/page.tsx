@@ -5,7 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { exportToExcel } from "@/lib/export";
+import { exportToExcel, exportToPdf } from "@/lib/export";
 import { StatsBarChart } from "@/components/StatsBarChart";
 import { IntervencionesContent } from "@/components/IntervencionesContent";
 import type {
@@ -118,8 +118,8 @@ function LibroGuardiaContent() {
 // ---------- Turno de guardia ----------
 function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
   const [openShift, setOpenShift] = useState<GuardShift | null>(null);
-  const [recentShifts, setRecentShifts] = useState<GuardShift[]>([]);
   const [names, setNames] = useState<Map<string, string>>(new Map());
+  const [profiles, setProfiles] = useState<{ id: string; full_name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -131,37 +131,73 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
   // realmente de guardia, más allá de con qué cuenta se cargó.
   const [openedByName, setOpenedByName] = useState("");
   const [closedByName, setClosedByName] = useState("");
-  // Búsqueda por día en "Turnos anteriores": consulta aparte a la tabla
-  // completa (no se limita a los últimos 10 como la carga normal), para
-  // poder encontrar un turno viejo sin importar cuántos haya.
-  const [searchDate, setSearchDate] = useState("");
-  const [searchResults, setSearchResults] = useState<GuardShift[] | null>(null);
-  const [searching, setSearching] = useState(false);
-  const [exporting, setExporting] = useState(false);
 
-  const runSearch = async (date: string) => {
-    if (!date) {
-      setSearchResults(null);
-      return;
-    }
-    setSearching(true);
-    const dayStart = new Date(date);
-    const dayEnd = new Date(date);
-    dayEnd.setHours(23, 59, 59, 999);
-    const { data } = await supabase
+  // Historial de turnos cerrados ("Turnos anteriores"): se puede filtrar por
+  // guardia y/o rango de fechas para encontrar uno viejo o ver quién estuvo
+  // tal día — la consulta va directo a la tabla completa (no se limita a los
+  // últimos 10 como el estado por defecto) en cuanto hay algún filtro puesto.
+  const [historyPersonId, setHistoryPersonId] = useState("all");
+  const [historyFrom, setHistoryFrom] = useState("");
+  const [historyTo, setHistoryTo] = useState("");
+  const [shiftHistory, setShiftHistory] = useState<GuardShift[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  const hasHistoryFilter = historyPersonId !== "all" || !!historyFrom || !!historyTo;
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    let query = supabase
       .from("guard_shifts")
       .select("*")
-      .gte("opened_at", dayStart.toISOString())
-      .lte("opened_at", dayEnd.toISOString())
+      .not("closed_at", "is", null)
       .order("opened_at", { ascending: false });
-    setSearchResults((data as GuardShift[]) ?? []);
-    setSearching(false);
+    if (historyPersonId !== "all") query = query.eq("opened_by", historyPersonId);
+    if (historyFrom) query = query.gte("opened_at", new Date(historyFrom).toISOString());
+    if (historyTo) {
+      const to = new Date(historyTo);
+      to.setHours(23, 59, 59, 999);
+      query = query.lte("opened_at", to.toISOString());
+    }
+    if (!hasHistoryFilter) query = query.limit(20);
+    const { data, error: fetchError } = await query;
+    setHistoryLoading(false);
+    if (fetchError) {
+      setError(fetchError.message);
+      return;
+    }
+    setShiftHistory((data as GuardShift[]) ?? []);
+  };
+
+  // Para exportar: misma búsqueda que loadHistory, pero sin el límite de 20
+  // — así "Exportar" siempre trae TODO lo que cae dentro del filtro actual
+  // (o el historial completo si no hay ningún filtro puesto).
+  const fetchFullHistory = async (): Promise<GuardShift[] | null> => {
+    let query = supabase
+      .from("guard_shifts")
+      .select("*")
+      .not("closed_at", "is", null)
+      .order("opened_at", { ascending: false });
+    if (historyPersonId !== "all") query = query.eq("opened_by", historyPersonId);
+    if (historyFrom) query = query.gte("opened_at", new Date(historyFrom).toISOString());
+    if (historyTo) {
+      const to = new Date(historyTo);
+      to.setHours(23, 59, 59, 999);
+      query = query.lte("opened_at", to.toISOString());
+    }
+    const { data, error: fetchError } = await query;
+    if (fetchError) {
+      setError(fetchError.message);
+      return null;
+    }
+    return (data as GuardShift[]) ?? [];
   };
 
   useEffect(() => {
-    runSearch(searchDate);
+    loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchDate]);
+  }, [historyPersonId, historyFrom, historyTo]);
 
   const load = async () => {
     setLoading(true);
@@ -170,19 +206,15 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
       .select("*")
       .is("closed_at", null)
       .maybeSingle();
-    const { data: recent } = await supabase
-      .from("guard_shifts")
-      .select("*")
-      .not("closed_at", "is", null)
-      .order("closed_at", { ascending: false })
-      .limit(10);
-    const { data: profiles } = await supabase.from("profiles").select("id, full_name");
+    const { data: profilesData } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .order("full_name");
+    const list = (profilesData as { id: string; full_name: string }[]) ?? [];
 
-    setNames(
-      new Map(((profiles as { id: string; full_name: string }[]) ?? []).map((p) => [p.id, p.full_name]))
-    );
+    setProfiles(list);
+    setNames(new Map(list.map((p) => [p.id, p.full_name])));
     setOpenShift((open as GuardShift) ?? null);
-    setRecentShifts((recent as GuardShift[]) ?? []);
     setLoading(false);
   };
 
@@ -190,11 +222,15 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
     load();
     const channel = supabase
       .channel("guard-shifts")
-      .on("postgres_changes", { event: "*", schema: "public", table: "guard_shifts" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "guard_shifts" }, () => {
+        load();
+        loadHistory();
+      })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const nameOf = (id: string) => names.get(id) ?? "—";
@@ -206,37 +242,75 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   };
 
-  const formatShiftDuration = (startIso: string, endIso: string | null) => {
-    const start = new Date(startIso).getTime();
-    const end = endIso ? new Date(endIso).getTime() : Date.now();
-    const mins = Math.max(0, Math.round((end - start) / 60000));
+  const formatMinutes = (mins: number) => {
     const h = Math.floor(mins / 60);
     const m = mins % 60;
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   };
 
-  // Exporta el historial COMPLETO de turnos (no solo los últimos 10 que se
-  // muestran en pantalla) — consulta aparte a la tabla entera.
-  const handleExportHistory = async () => {
-    setExporting(true);
-    const { data, error: fetchError } = await supabase
-      .from("guard_shifts")
-      .select("*")
-      .order("opened_at", { ascending: false });
-    setExporting(false);
-    if (fetchError) {
-      setError(fetchError.message);
-      return;
+  const formatShiftDuration = (startIso: string, endIso: string | null) => {
+    const start = new Date(startIso).getTime();
+    const end = endIso ? new Date(endIso).getTime() : Date.now();
+    return formatMinutes(Math.max(0, Math.round((end - start) / 60000)));
+  };
+
+  // Horas por guardia dentro de lo que se está mostrando/filtrando ahora. Se
+  // cuenta sobre quien ABRIÓ el turno (es el "dueño" del turno en pantalla;
+  // quien lo cerró puede ser otra persona que solo recibió la posta, ya
+  // aclarado aparte en cada fila como "→ cerrado por...").
+  const historySummary = useMemo(() => {
+    const byPerson = new Map<string, { name: string; count: number; minutes: number }>();
+    shiftHistory.forEach((s) => {
+      const key = s.opened_by;
+      const name = s.opened_by_name || nameOf(s.opened_by);
+      const mins = Math.max(
+        0,
+        Math.round((new Date(s.closed_at as string).getTime() - new Date(s.opened_at).getTime()) / 60000)
+      );
+      const prev = byPerson.get(key) ?? { name, count: 0, minutes: 0 };
+      byPerson.set(key, { name, count: prev.count + 1, minutes: prev.minutes + mins });
+    });
+    return Array.from(byPerson.values()).sort((a, b) => b.minutes - a.minutes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shiftHistory]);
+
+  const shiftToRow = (s: GuardShift) => ({
+    "Abierto por": s.opened_by_name || nameOf(s.opened_by),
+    Apertura: new Date(s.opened_at).toLocaleString("es-AR"),
+    "Cerrado por": s.closed_by_name || nameOf(s.closed_by ?? ""),
+    Cierre: new Date(s.closed_at as string).toLocaleString("es-AR"),
+    Duración: formatShiftDuration(s.opened_at, s.closed_at),
+    Novedades: s.notes ?? "",
+  });
+
+  const filterDescription = () => {
+    const parts: string[] = [];
+    if (historyPersonId !== "all") {
+      const p = profiles.find((pr) => pr.id === historyPersonId);
+      if (p) parts.push(`Guardia: ${p.full_name}`);
     }
-    const rows = ((data as GuardShift[]) ?? []).map((s) => ({
-      "Abierto por": s.opened_by_name || nameOf(s.opened_by),
-      Apertura: new Date(s.opened_at).toLocaleString("es-AR"),
-      "Cerrado por": s.closed_at ? s.closed_by_name || nameOf(s.closed_by ?? "") : "—",
-      Cierre: s.closed_at ? new Date(s.closed_at).toLocaleString("es-AR") : "En curso",
-      Duración: formatShiftDuration(s.opened_at, s.closed_at),
-      Novedades: s.notes ?? "",
-    }));
-    exportToExcel(rows, "turnos-de-guardia", "Turnos");
+    if (historyFrom) parts.push(`Desde: ${new Date(historyFrom).toLocaleDateString("es-AR")}`);
+    if (historyTo) parts.push(`Hasta: ${new Date(historyTo).toLocaleDateString("es-AR")}`);
+    return parts.length > 0 ? parts.join(" · ") : "Historial completo";
+  };
+
+  const handleExportExcel = async () => {
+    setExportingExcel(true);
+    const rows = await fetchFullHistory();
+    setExportingExcel(false);
+    if (!rows) return;
+    exportToExcel(rows.map(shiftToRow), "turnos-de-guardia", "Turnos");
+  };
+
+  const handleExportPdf = async () => {
+    setExportingPdf(true);
+    const rows = await fetchFullHistory();
+    setExportingPdf(false);
+    if (!rows) return;
+    exportToPdf(rows.map(shiftToRow), "turnos-de-guardia", {
+      title: "Turnos de guardia",
+      subtitle: filterDescription(),
+    });
   };
 
   const handleOpen = async () => {
@@ -316,7 +390,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
       .eq("id", shift.id);
     if (deleteError) setError(deleteError.message);
     load();
-    if (searchDate) runSearch(searchDate);
+    loadHistory();
   };
 
   return (
@@ -410,84 +484,136 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
         </div>
       )}
 
-      {(recentShifts.length > 0 || searchDate) && (
-        <div className="rounded-xl border border-neutral-200 bg-white">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-4 py-2">
+      <div className="rounded-xl border border-neutral-200 bg-white">
+        <div className="border-b border-neutral-200 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold text-neutral-700">Turnos anteriores</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1">
-                <span className="text-sm text-neutral-400" aria-hidden>
-                  🔍
-                </span>
-                <input
-                  type="date"
-                  value={searchDate}
-                  onChange={(e) => setSearchDate(e.target.value)}
-                  aria-label="Buscar turno por día"
-                  className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700"
-                />
-                {searchDate && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchDate("")}
-                    className="text-xs font-medium text-neutral-400 hover:text-neutral-600"
-                    title="Borrar búsqueda"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
+            <div className="flex flex-wrap gap-2">
               <button
-                onClick={handleExportHistory}
-                disabled={exporting}
+                onClick={handleExportExcel}
+                disabled={exportingExcel}
                 className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
               >
-                {exporting ? "Exportando…" : "📥 Exportar Excel"}
+                {exportingExcel ? "Exportando…" : "📥 Excel"}
+              </button>
+              <button
+                onClick={handleExportPdf}
+                disabled={exportingPdf}
+                className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+              >
+                {exportingPdf ? "Exportando…" : "📄 PDF"}
               </button>
             </div>
           </div>
 
-          {searching ? (
-            <p className="px-4 py-4 text-sm text-neutral-500">Buscando…</p>
-          ) : (searchDate ? searchResults ?? [] : recentShifts).length === 0 ? (
-            <p className="px-4 py-4 text-sm text-neutral-500">
-              {searchDate
-                ? "No se encontró ningún turno ese día."
-                : "Todavía no hay turnos cerrados."}
-            </p>
-          ) : (
-            <ul className="divide-y divide-neutral-100">
-              {(searchDate ? searchResults ?? [] : recentShifts).map((s) => (
-                <li key={s.id} className="flex items-start justify-between gap-2 px-4 py-3 text-sm">
-                  <div>
-                    <p className="font-medium text-neutral-800">
-                      {s.opened_by_name || nameOf(s.opened_by)}
-                      {s.closed_at &&
-                      (s.closed_by_name || nameOf(s.closed_by ?? "")) !==
-                        (s.opened_by_name || nameOf(s.opened_by))
-                        ? ` → cerrado por ${s.closed_by_name || nameOf(s.closed_by ?? "")}`
-                        : ""}
-                    </p>
-                    <p className="text-xs text-neutral-500">
-                      {new Date(s.opened_at).toLocaleString("es-AR")}
-                      {s.closed_at ? ` — ${new Date(s.closed_at).toLocaleString("es-AR")}` : " — en curso"}
-                    </p>
-                    {s.notes && <p className="mt-1 text-neutral-600">{s.notes}</p>}
-                  </div>
-                  {isAdmin && (
-                    <button
-                      onClick={() => handleDeleteShift(s)}
-                      className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                    >
-                      Eliminar
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
+            <label className="block text-xs">
+              <span className="mb-1 flex items-center gap-1 font-medium text-neutral-500">
+                🔍 Guardia
+              </span>
+              <select
+                value={historyPersonId}
+                onChange={(e) => setHistoryPersonId(e.target.value)}
+                className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              >
+                <option value="all">Todos</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.full_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs">
+              <span className="mb-1 block font-medium text-neutral-500">Desde</span>
+              <input
+                type="date"
+                value={historyFrom}
+                onChange={(e) => setHistoryFrom(e.target.value)}
+                className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="block text-xs">
+              <span className="mb-1 block font-medium text-neutral-500">Hasta</span>
+              <input
+                type="date"
+                value={historyTo}
+                onChange={(e) => setHistoryTo(e.target.value)}
+                className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            {hasHistoryFilter && (
+              <button
+                type="button"
+                onClick={() => {
+                  setHistoryPersonId("all");
+                  setHistoryFrom("");
+                  setHistoryTo("");
+                }}
+                className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100"
+              >
+                Limpiar filtros
+              </button>
+            )}
+          </div>
         </div>
-      )}
+
+        {historySummary.length > 0 && (
+          <div className="border-b border-neutral-100 bg-neutral-50 px-4 py-2">
+            <p className="mb-1 text-xs font-semibold uppercase text-neutral-500">
+              Horas por guardia {hasHistoryFilter ? "(según el filtro de arriba)" : "(últimos turnos)"}
+            </p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-700">
+              {historySummary.map((h) => (
+                <span key={h.name}>
+                  <strong>{h.name}</strong>: {h.count} turno{h.count !== 1 ? "s" : ""} · {formatMinutes(h.minutes)}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {historyLoading ? (
+          <p className="px-4 py-4 text-sm text-neutral-500">Cargando…</p>
+        ) : shiftHistory.length === 0 ? (
+          <p className="px-4 py-4 text-sm text-neutral-500">
+            {hasHistoryFilter
+              ? "No se encontró ningún turno con ese filtro."
+              : "Todavía no hay turnos cerrados."}
+          </p>
+        ) : (
+          <ul className="divide-y divide-neutral-100">
+            {shiftHistory.map((s) => (
+              <li key={s.id} className="flex items-start justify-between gap-2 px-4 py-3 text-sm">
+                <div>
+                  <p className="font-medium text-neutral-800">
+                    {s.opened_by_name || nameOf(s.opened_by)}
+                    {(s.closed_by_name || nameOf(s.closed_by ?? "")) !==
+                    (s.opened_by_name || nameOf(s.opened_by))
+                      ? ` → cerrado por ${s.closed_by_name || nameOf(s.closed_by ?? "")}`
+                      : ""}
+                  </p>
+                  <p className="text-xs text-neutral-500">
+                    {new Date(s.opened_at).toLocaleString("es-AR")} —{" "}
+                    {new Date(s.closed_at as string).toLocaleString("es-AR")}
+                    {" · "}
+                    {formatShiftDuration(s.opened_at, s.closed_at)}
+                  </p>
+                  {s.notes && <p className="mt-1 text-neutral-600">{s.notes}</p>}
+                </div>
+                {isAdmin && (
+                  <button
+                    onClick={() => handleDeleteShift(s)}
+                    className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                  >
+                    Eliminar
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
