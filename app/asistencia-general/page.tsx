@@ -56,6 +56,7 @@ function AsistenciaGeneralContent() {
   const [manualReasonId, setManualReasonId] = useState("");
   const [manualCheckIn, setManualCheckIn] = useState("");
   const [manualCheckOut, setManualCheckOut] = useState("");
+  const [manualNotes, setManualNotes] = useState("");
   const [editingRow, setEditingRow] = useState<Row | null>(null);
   const [observationText, setObservationText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -317,7 +318,9 @@ function AsistenciaGeneralContent() {
       checked_out_at: manualCheckOut ? new Date(manualCheckOut).toISOString() : null,
       shift_id: openShift?.id ?? null,
       loaded_by_name: guardName,
-      notes: "Carga retroactiva: se olvidó de marcar.",
+      notes: manualNotes.trim()
+        ? `Carga retroactiva: se olvidó de marcar. ${manualNotes.trim()}`
+        : "Carga retroactiva: se olvidó de marcar.",
     });
 
     setSaving(false);
@@ -329,6 +332,7 @@ function AsistenciaGeneralContent() {
     setManualReasonId("");
     setManualCheckIn("");
     setManualCheckOut("");
+    setManualNotes("");
     setShowManualForm(false);
     load();
   };
@@ -576,6 +580,18 @@ function AsistenciaGeneralContent() {
               />
             </label>
           </div>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-neutral-700">
+              Observación (opcional)
+            </span>
+            <textarea
+              value={manualNotes}
+              onChange={(e) => setManualNotes(e.target.value)}
+              rows={2}
+              placeholder='Ej: "se olvidó de marcar salida, confirmado por radio"'
+              className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </label>
           <button
             type="submit"
             disabled={saving}
