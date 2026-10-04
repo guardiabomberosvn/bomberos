@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { notifyMaintenanceContacts } from "@/lib/maintenance";
-import type { FindingPriority, MaintenanceFinding, Vehicle } from "@/lib/types";
+import type { FindingPriority, GuardShift, MaintenanceFinding, Vehicle } from "@/lib/types";
 import { FINDING_PRIORITY_LABELS, FINDING_STATUS_LABELS } from "@/lib/types";
 
 const PRIORITY_COLORS: Record<FindingPriority, string> = {
@@ -44,6 +45,34 @@ function HallazgosContent() {
   const [priority, setPriority] = useState<FindingPriority>("media");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Un guardia tiene que haber abierto turno en el Libro de Guardia antes de
+  // poder reportar un hallazgo — admin y jefatura no dependen de esto.
+  const [openShift, setOpenShift] = useState<GuardShift | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
+  const isGuardiaRole = profile?.role === "guardia";
+  const blockedByShift = isGuardiaRole && !openShift;
+
+  useEffect(() => {
+    const loadShift = async () => {
+      setShiftLoading(true);
+      const { data } = await supabase
+        .from("guard_shifts")
+        .select("*")
+        .is("closed_at", null)
+        .maybeSingle();
+      setOpenShift((data as GuardShift) ?? null);
+      setShiftLoading(false);
+    };
+    loadShift();
+    const shiftChannel = supabase
+      .channel("hallazgos-shift")
+      .on("postgres_changes", { event: "*", schema: "public", table: "guard_shifts" }, () => loadShift())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(shiftChannel);
+    };
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -86,7 +115,7 @@ function HallazgosContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description.trim() || !profile) return;
+    if (!description.trim() || !profile || blockedByShift) return;
     setError(null);
     setSuccess(null);
     setSubmitting(true);
@@ -166,13 +195,25 @@ function HallazgosContent() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-neutral-900">Hallazgos de mantenimiento</h1>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-        >
-          + Reportar problema
-        </button>
+        {!shiftLoading && !blockedByShift && (
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+          >
+            + Reportar problema
+          </button>
+        )}
       </div>
+
+      {blockedByShift && (
+        <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Tenés que abrir turno en el Libro de Guardia antes de poder reportar un
+          hallazgo.{" "}
+          <Link href="/libro-guardia" className="font-medium underline">
+            Ir a Libro de Guardia
+          </Link>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -185,7 +226,7 @@ function HallazgosContent() {
         </div>
       )}
 
-      {showForm && (
+      {showForm && !blockedByShift && (
         <form
           onSubmit={handleSubmit}
           className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2"
