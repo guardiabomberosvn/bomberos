@@ -37,6 +37,7 @@ const AREA_OPTIONS = [
 
 function HallazgosContent() {
   const { profile } = useAuth();
+  const isAdmin = profile?.role === "admin";
 
   const [findings, setFindings] = useState<MaintenanceFinding[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -337,6 +338,31 @@ function HallazgosContent() {
     load();
   };
 
+  // Solo el administrador puede borrar un hallazgo — sirve para limpiar
+  // pruebas o cargas por error, incluidos los que quedaron trabados
+  // mostrando "Convertido a orden" sin una orden real detrás (por ejemplo
+  // si se borró a mano la orden de mantenimiento vinculada). Borrar el
+  // hallazgo no toca la orden de mantenimiento si todavía existe.
+  const handleDeleteFinding = async (f: MaintenanceFinding) => {
+    if (!isAdmin) return;
+    if (
+      !window.confirm(
+        `¿Eliminar este hallazgo ("${f.description}")? Esta acción no se puede deshacer. La orden de mantenimiento vinculada (si existe) no se borra.`
+      )
+    )
+      return;
+    const { error: deleteError } = await supabase
+      .from("maintenance_findings")
+      .delete()
+      .eq("id", f.id);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+    load();
+    loadHistory();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -476,11 +502,21 @@ function HallazgosContent() {
                       </span>
                     </p>
                   </div>
-                  <span
-                    className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${PRIORITY_COLORS[f.priority]}`}
-                  >
-                    {FINDING_PRIORITY_LABELS[f.priority]}
-                  </span>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs font-medium ${PRIORITY_COLORS[f.priority]}`}
+                    >
+                      {FINDING_PRIORITY_LABELS[f.priority]}
+                    </span>
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleDeleteFinding(f)}
+                        className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                      >
+                        Eliminar
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))
@@ -606,6 +642,14 @@ function HallazgosContent() {
                     <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">
                       {findingDisplayStatus(f)}
                     </span>
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleDeleteFinding(f)}
+                        className="rounded-md border border-red-300 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                      >
+                        Eliminar
+                      </button>
+                    )}
                   </div>
                 </div>
               </li>

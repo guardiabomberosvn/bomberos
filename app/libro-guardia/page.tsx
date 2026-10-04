@@ -403,6 +403,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
     setCloseNotes("");
     setClosedByName("");
     load();
+    loadHistory();
   };
 
   const handleDeleteShift = async (shift: GuardShift) => {
