@@ -15,7 +15,7 @@ interface FoundPerson {
   hasOpenRecord: boolean;
 }
 
-function KioskoContent() {
+function CheckinContent() {
   const { profile } = useAuth();
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -109,7 +109,7 @@ function KioskoContent() {
   return (
     <div className="flex min-h-[70vh] items-center justify-center">
       <div className="w-full max-w-sm space-y-4 rounded-2xl border border-neutral-200 bg-white p-6 text-center shadow-sm">
-        <h1 className="text-xl font-bold text-neutral-900">Registrar asistencia</h1>
+        <h1 className="text-xl font-bold text-neutral-900">Check-in de asistencia</h1>
 
         {step === "legajo" && (
           <form onSubmit={handleBuscar} className="space-y-4">
@@ -204,11 +204,11 @@ function KioskoContent() {
   );
 }
 
-export default function KioskoPage() {
+export default function CheckinPage() {
   return (
-    <ProtectedRoute section="kiosko">
+    <ProtectedRoute section="checkin">
       <AppShell>
-        <KioskoContent />
+        <CheckinContent />
       </AppShell>
     </ProtectedRoute>
   );

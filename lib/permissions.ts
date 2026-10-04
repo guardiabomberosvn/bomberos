@@ -33,7 +33,13 @@ export type SectionKey =
   | "grupos"
   | "motivos"
   | "notificaciones"
-  | "kiosko";
+  | "checkin"
+  // No es una página propia: controla, adentro de "Asistencia (todos)", si
+  // esa persona ve el resumen de horas/puntos y el ranking "Puntaje por
+  // persona" — independiente de si puede entrar a esa página y cargar
+  // asistencia. Que alguien tenga habilitado "Asistencia (todos)" (o
+  // "Libro de Guardia") no le habilita esto de regalo.
+  | "asistencia_puntajes";
 
 export interface SectionDef {
   key: SectionKey;
@@ -60,6 +66,11 @@ export const SECTIONS: SectionDef[] = [
   // Estas 4 quedan agrupadas juntas bajo un mismo menú "Libro de guardia"
   // (antes estaban mezcladas dentro de "Operación").
   { key: "asistencia_general", label: "Asistencia (todos)", icon: "📋", href: "/asistencia-general", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
+  // Ver el resumen de horas/puntos y el ranking de "Puntaje por persona"
+  // dentro de Asistencia (todos). legacyRoles solo admin a propósito: antes
+  // cualquiera con acceso a esa página lo veía de regalo, ahora es admin
+  // por defecto y vos elegís a quién más se lo das desde Administración.
+  { key: "asistencia_puntajes", label: "Puntaje y horas (en Asistencia)", icon: "🏆", href: "/asistencia-general", group: "libroGuardia", legacyRoles: ["admin"] },
   { key: "qr_consola", label: "QR de asistencia", icon: "🖥️", href: "/qr-consola", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
   { key: "libro_guardia", label: "Libro de Guardia", icon: "📖", href: "/libro-guardia", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
   { key: "stock", label: "Stock", icon: "📦", href: "/stock", group: "libroGuardia", legacyRoles: ["admin", "guardia"] },
@@ -77,7 +88,7 @@ export const SECTIONS: SectionDef[] = [
   // ingreso/egreso escribiendo su legajo. legacyRoles vacío a propósito —
   // nadie la ve por defecto (ni admin), incluida esta sola a mano desde
   // Administración, en la cuenta fija que se deje cargada en la tablet.
-  { key: "kiosko", label: "Kiosko (tablet)", icon: "🪪", href: "/kiosko", group: "general", legacyRoles: [] },
+  { key: "checkin", label: "Check-in (tablet)", icon: "🪪", href: "/checkin", group: "general", legacyRoles: [] },
 ];
 
 export function hasSectionAccess(

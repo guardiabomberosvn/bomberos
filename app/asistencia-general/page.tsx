@@ -6,6 +6,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { exportToExcel } from "@/lib/export";
+import { hasSectionAccess } from "@/lib/permissions";
 import type { AttendanceReason, AttendanceRecord, GuardShift, Profile } from "@/lib/types";
 
 interface Row extends AttendanceRecord {
@@ -29,6 +30,10 @@ function AsistenciaGeneralContent() {
   // puede llegar a ver esta pantalla si se le habilita puntualmente, pero
   // nunca estos controles.
   const canManage = profile?.role === "admin" || profile?.role === "guardia";
+  // Ver el resumen de horas/puntos y el ranking "Puntaje por persona" es un
+  // permiso aparte (ver lib/permissions.ts) — tener acceso a esta página no
+  // lo habilita solo.
+  const canSeePuntajes = !!profile && hasSectionAccess(profile, "asistencia_puntajes");
 
   const [rows, setRows] = useState<Row[]>([]);
   const [personal, setPersonal] = useState<Profile[]>([]);
@@ -617,87 +622,91 @@ function AsistenciaGeneralContent() {
         </label>
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white p-5">
-        <p className="text-sm font-semibold text-neutral-800">
-          {selectedPersonName
-            ? `Resumen de ${selectedPersonName}`
-            : "Resumen general (todos, según filtros)"}
-        </p>
-        <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <div>
-            <p className="text-xs text-neutral-500">Horas totales</p>
-            <p className="text-2xl font-bold text-neutral-900">
-              {formatHours(summary.totalMinutes)}
+      {canSeePuntajes && (
+        <>
+          <div className="rounded-xl border border-neutral-200 bg-white p-5">
+            <p className="text-sm font-semibold text-neutral-800">
+              {selectedPersonName
+                ? `Resumen de ${selectedPersonName}`
+                : "Resumen general (todos, según filtros)"}
             </p>
-          </div>
-          <div>
-            <p className="text-xs text-neutral-500">Puntos totales</p>
-            <p className="text-2xl font-bold text-brand">{summary.totalPoints}</p>
-          </div>
-          <div>
-            <p className="text-xs text-neutral-500">Registros contados</p>
-            <p className="text-2xl font-bold text-neutral-900">{summary.count}</p>
-          </div>
-        </div>
-        {summary.openCount > 0 && (
-          <p className="mt-2 text-xs text-neutral-400">
-            {summary.openCount} registro(s) todavía en curso — no se suman hasta que se marque la salida.
-          </p>
-        )}
-        {summary.byReason.size > 0 && (
-          <div className="mt-4 space-y-1 border-t border-neutral-100 pt-3">
-            {Array.from(summary.byReason.entries()).map(([name, v]) => (
-              <div key={name} className="flex justify-between text-sm text-neutral-600">
-                <span>
-                  {name} <span className="text-neutral-400">({v.count})</span>
-                </span>
-                <span>
-                  {formatHours(v.minutes)} · {v.points} pts
-                </span>
+            <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-neutral-500">Horas totales</p>
+                <p className="text-2xl font-bold text-neutral-900">
+                  {formatHours(summary.totalMinutes)}
+                </p>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
-        <div className="border-b border-neutral-200 px-4 py-3">
-          <h2 className="font-semibold text-neutral-800">Puntaje por persona</h2>
-          <p className="text-xs text-neutral-500">
-            {filterFrom || filterTo
-              ? "Según el rango de fechas elegido arriba."
-              : "Histórico completo (elegí una fecha \"Desde\"/\"Hasta\" arriba para acotarlo)."}
-          </p>
-        </div>
-        <table className="min-w-full divide-y divide-neutral-200 text-sm">
-          <thead className="bg-neutral-50 text-left text-neutral-500">
-            <tr>
-              <th className="px-4 py-3 font-medium">Persona</th>
-              <th className="px-4 py-3 font-medium">Horas</th>
-              <th className="px-4 py-3 font-medium">Puntos</th>
-              <th className="px-4 py-3 font-medium">Registros</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-neutral-100">
-            {perPersonSummary.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-neutral-500">
-                  No hay personal cargado.
-                </td>
-              </tr>
-            ) : (
-              perPersonSummary.map((p) => (
-                <tr key={p.id}>
-                  <td className="px-4 py-3 font-medium text-neutral-800">{p.name}</td>
-                  <td className="px-4 py-3 text-neutral-600">{formatHours(p.minutes)}</td>
-                  <td className="px-4 py-3 font-semibold text-brand">{p.points}</td>
-                  <td className="px-4 py-3 text-neutral-500">{p.count}</td>
-                </tr>
-              ))
+              <div>
+                <p className="text-xs text-neutral-500">Puntos totales</p>
+                <p className="text-2xl font-bold text-brand">{summary.totalPoints}</p>
+              </div>
+              <div>
+                <p className="text-xs text-neutral-500">Registros contados</p>
+                <p className="text-2xl font-bold text-neutral-900">{summary.count}</p>
+              </div>
+            </div>
+            {summary.openCount > 0 && (
+              <p className="mt-2 text-xs text-neutral-400">
+                {summary.openCount} registro(s) todavía en curso — no se suman hasta que se marque la salida.
+              </p>
             )}
-          </tbody>
-        </table>
-      </div>
+            {summary.byReason.size > 0 && (
+              <div className="mt-4 space-y-1 border-t border-neutral-100 pt-3">
+                {Array.from(summary.byReason.entries()).map(([name, v]) => (
+                  <div key={name} className="flex justify-between text-sm text-neutral-600">
+                    <span>
+                      {name} <span className="text-neutral-400">({v.count})</span>
+                    </span>
+                    <span>
+                      {formatHours(v.minutes)} · {v.points} pts
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+            <div className="border-b border-neutral-200 px-4 py-3">
+              <h2 className="font-semibold text-neutral-800">Puntaje por persona</h2>
+              <p className="text-xs text-neutral-500">
+                {filterFrom || filterTo
+                  ? "Según el rango de fechas elegido arriba."
+                  : "Histórico completo (elegí una fecha \"Desde\"/\"Hasta\" arriba para acotarlo)."}
+              </p>
+            </div>
+            <table className="min-w-full divide-y divide-neutral-200 text-sm">
+              <thead className="bg-neutral-50 text-left text-neutral-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Persona</th>
+                  <th className="px-4 py-3 font-medium">Horas</th>
+                  <th className="px-4 py-3 font-medium">Puntos</th>
+                  <th className="px-4 py-3 font-medium">Registros</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {perPersonSummary.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-6 text-center text-neutral-500">
+                      No hay personal cargado.
+                    </td>
+                  </tr>
+                ) : (
+                  perPersonSummary.map((p) => (
+                    <tr key={p.id}>
+                      <td className="px-4 py-3 font-medium text-neutral-800">{p.name}</td>
+                      <td className="px-4 py-3 text-neutral-600">{formatHours(p.minutes)}</td>
+                      <td className="px-4 py-3 font-semibold text-brand">{p.points}</td>
+                      <td className="px-4 py-3 text-neutral-500">{p.count}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
         <table className="min-w-full divide-y divide-neutral-200 text-sm">

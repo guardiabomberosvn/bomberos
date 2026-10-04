@@ -39,8 +39,14 @@ function navItemsForGroup(
   if (!profile) return [];
   return SECTIONS.filter(
     // "notificaciones" tiene su propia campanita en el encabezado (ver más
-    // abajo), no un link de menú común — se excluye acá para no duplicarla.
-    (s) => s.group === group && s.key !== "notificaciones" && hasSectionAccess(profile, s.key)
+    // abajo), no un link de menú común. "asistencia_puntajes" tampoco es
+    // una página propia: solo controla qué se ve adentro de "Asistencia
+    // (todos)". Ninguna de las dos va en el menú.
+    (s) =>
+      s.group === group &&
+      s.key !== "notificaciones" &&
+      s.key !== "asistencia_puntajes" &&
+      hasSectionAccess(profile, s.key)
   ).map((s) => ({
     href: s.href,
     label: s.label,
