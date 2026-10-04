@@ -120,6 +120,11 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
   const [openShift, setOpenShift] = useState<GuardShift | null>(null);
   const [names, setNames] = useState<Map<string, string>>(new Map());
   const [profiles, setProfiles] = useState<{ id: string; full_name: string }[]>([]);
+  // Nombres de guardias para el filtro de "Turnos anteriores": salen de lo
+  // que la gente escribió a mano al abrir turno (guard_shifts.opened_by_name),
+  // no de las cuentas de la aplicación — la PC de guardia usa una sola cuenta
+  // compartida, así que los guardias reales casi nunca tienen cuenta propia.
+  const [guardNames, setGuardNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -136,7 +141,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
   // guardia y/o rango de fechas para encontrar uno viejo o ver quién estuvo
   // tal día — la consulta va directo a la tabla completa (no se limita a los
   // últimos 10 como el estado por defecto) en cuanto hay algún filtro puesto.
-  const [historyPersonId, setHistoryPersonId] = useState("all");
+  const [historyGuardName, setHistoryGuardName] = useState("all");
   const [historyFrom, setHistoryFrom] = useState("");
   const [historyTo, setHistoryTo] = useState("");
   const [shiftHistory, setShiftHistory] = useState<GuardShift[]>([]);
@@ -144,7 +149,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
 
-  const hasHistoryFilter = historyPersonId !== "all" || !!historyFrom || !!historyTo;
+  const hasHistoryFilter = historyGuardName !== "all" || !!historyFrom || !!historyTo;
 
   const loadHistory = async () => {
     setHistoryLoading(true);
@@ -153,7 +158,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
       .select("*")
       .not("closed_at", "is", null)
       .order("opened_at", { ascending: false });
-    if (historyPersonId !== "all") query = query.eq("opened_by", historyPersonId);
+    if (historyGuardName !== "all") query = query.eq("opened_by_name", historyGuardName);
     if (historyFrom) query = query.gte("opened_at", new Date(historyFrom).toISOString());
     if (historyTo) {
       const to = new Date(historyTo);
@@ -179,7 +184,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
       .select("*")
       .not("closed_at", "is", null)
       .order("opened_at", { ascending: false });
-    if (historyPersonId !== "all") query = query.eq("opened_by", historyPersonId);
+    if (historyGuardName !== "all") query = query.eq("opened_by_name", historyGuardName);
     if (historyFrom) query = query.gte("opened_at", new Date(historyFrom).toISOString());
     if (historyTo) {
       const to = new Date(historyTo);
@@ -197,7 +202,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
   useEffect(() => {
     loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyPersonId, historyFrom, historyTo]);
+  }, [historyGuardName, historyFrom, historyTo]);
 
   const load = async () => {
     setLoading(true);
@@ -211,9 +216,21 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
       .select("id, full_name")
       .order("full_name");
     const list = (profilesData as { id: string; full_name: string }[]) ?? [];
+    // Lista de guardias para el filtro: nombres escritos a mano al abrir
+    // turno, no cuentas de la aplicación (ver comentario en guardNames).
+    const { data: shiftNames } = await supabase
+      .from("guard_shifts")
+      .select("opened_by_name")
+      .not("opened_by_name", "is", null);
+    const uniqueGuardNames = Array.from(
+      new Set(
+        ((shiftNames as { opened_by_name: string }[]) ?? []).map((s) => s.opened_by_name.trim())
+      )
+    ).sort((a, b) => a.localeCompare(b, "es"));
 
     setProfiles(list);
     setNames(new Map(list.map((p) => [p.id, p.full_name])));
+    setGuardNames(uniqueGuardNames);
     setOpenShift((open as GuardShift) ?? null);
     setLoading(false);
   };
@@ -257,18 +274,20 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
   // Horas por guardia dentro de lo que se está mostrando/filtrando ahora. Se
   // cuenta sobre quien ABRIÓ el turno (es el "dueño" del turno en pantalla;
   // quien lo cerró puede ser otra persona que solo recibió la posta, ya
-  // aclarado aparte en cada fila como "→ cerrado por...").
+  // aclarado aparte en cada fila como "→ cerrado por..."). Se agrupa por el
+  // NOMBRE escrito a mano, no por la cuenta (opened_by) — todos los guardias
+  // usan la misma cuenta compartida, así que agrupar por cuenta mezclaría a
+  // personas distintas en un solo renglón.
   const historySummary = useMemo(() => {
     const byPerson = new Map<string, { name: string; count: number; minutes: number }>();
     shiftHistory.forEach((s) => {
-      const key = s.opened_by;
       const name = s.opened_by_name || nameOf(s.opened_by);
       const mins = Math.max(
         0,
         Math.round((new Date(s.closed_at as string).getTime() - new Date(s.opened_at).getTime()) / 60000)
       );
-      const prev = byPerson.get(key) ?? { name, count: 0, minutes: 0 };
-      byPerson.set(key, { name, count: prev.count + 1, minutes: prev.minutes + mins });
+      const prev = byPerson.get(name) ?? { name, count: 0, minutes: 0 };
+      byPerson.set(name, { name, count: prev.count + 1, minutes: prev.minutes + mins });
     });
     return Array.from(byPerson.values()).sort((a, b) => b.minutes - a.minutes);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -285,9 +304,8 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
 
   const filterDescription = () => {
     const parts: string[] = [];
-    if (historyPersonId !== "all") {
-      const p = profiles.find((pr) => pr.id === historyPersonId);
-      if (p) parts.push(`Guardia: ${p.full_name}`);
+    if (historyGuardName !== "all") {
+      parts.push(`Guardia: ${historyGuardName}`);
     }
     if (historyFrom) parts.push(`Desde: ${new Date(historyFrom).toLocaleDateString("es-AR")}`);
     if (historyTo) parts.push(`Hasta: ${new Date(historyTo).toLocaleDateString("es-AR")}`);
@@ -512,14 +530,14 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
                 🔍 Guardia
               </span>
               <select
-                value={historyPersonId}
-                onChange={(e) => setHistoryPersonId(e.target.value)}
+                value={historyGuardName}
+                onChange={(e) => setHistoryGuardName(e.target.value)}
                 className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
               >
                 <option value="all">Todos</option>
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.full_name}
+                {guardNames.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
                   </option>
                 ))}
               </select>
@@ -546,7 +564,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
               <button
                 type="button"
                 onClick={() => {
-                  setHistoryPersonId("all");
+                  setHistoryGuardName("all");
                   setHistoryFrom("");
                   setHistoryTo("");
                 }}
