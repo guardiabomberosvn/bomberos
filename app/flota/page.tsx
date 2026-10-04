@@ -13,6 +13,7 @@ import { exportMultiSheetExcel } from "@/lib/export";
 import { getVehicleServiceAlertLevel } from "@/lib/maintenance";
 import type {
   FuelLoad,
+  GuardShift,
   MaintenanceFinding,
   MaintenanceRecord,
   Profile,
@@ -75,6 +76,36 @@ function FlotaContent() {
   const defaultCostFrom = () => `${new Date().getFullYear()}-01-01`;
   const [costFrom, setCostFrom] = useState(defaultCostFrom);
   const [costTo, setCostTo] = useState("");
+
+  // Un guardia tiene que haber abierto turno en el Libro de Guardia para
+  // poder guardar cambios en el detalle de una orden de mantenimiento desde
+  // acá (el resto de las acciones de Flota ya son solo para admin). Admin y
+  // jefatura no dependen de esto.
+  const [openShift, setOpenShift] = useState<GuardShift | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
+  const isGuardiaRole = profile?.role === "guardia";
+  const blockedByShift = isGuardiaRole && !openShift;
+
+  useEffect(() => {
+    const loadShift = async () => {
+      setShiftLoading(true);
+      const { data } = await supabase
+        .from("guard_shifts")
+        .select("*")
+        .is("closed_at", null)
+        .maybeSingle();
+      setOpenShift((data as GuardShift) ?? null);
+      setShiftLoading(false);
+    };
+    loadShift();
+    const shiftChannel = supabase
+      .channel("flota-shift")
+      .on("postgres_changes", { event: "*", schema: "public", table: "guard_shifts" }, () => loadShift())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(shiftChannel);
+    };
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -777,6 +808,7 @@ function FlotaContent() {
           vehicles={vehicles}
           personal={personal}
           linkedFinding={findingFor(detailRecord.id)}
+          blockedByShift={blockedByShift}
           onClose={() => setDetailRecord(null)}
           onSaved={() => {
             setDetailRecord(null);

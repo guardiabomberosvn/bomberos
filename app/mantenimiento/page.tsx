@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
@@ -11,6 +12,7 @@ import { getVehicleServiceAlertLevel, notifyResponsible } from "@/lib/maintenanc
 import { MaintenanceDetailModal } from "@/components/MaintenanceDetailModal";
 import { MaintenancePreviewModal } from "@/components/MaintenancePreviewModal";
 import type {
+  GuardShift,
   MaintenanceFinding,
   MaintenanceRecord,
   MaintenanceStatus,
@@ -47,6 +49,35 @@ function MantenimientoContent() {
   const [showExport, setShowExport] = useState(false);
   const [exportFrom, setExportFrom] = useState("");
   const [exportTo, setExportTo] = useState("");
+
+  // Un guardia tiene que haber abierto turno en el Libro de Guardia antes de
+  // poder cargar o modificar el mantenimiento — admin y jefatura no dependen
+  // de esto.
+  const [openShift, setOpenShift] = useState<GuardShift | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
+  const isGuardiaRole = profile?.role === "guardia";
+  const blockedByShift = isGuardiaRole && !openShift;
+
+  useEffect(() => {
+    const loadShift = async () => {
+      setShiftLoading(true);
+      const { data } = await supabase
+        .from("guard_shifts")
+        .select("*")
+        .is("closed_at", null)
+        .maybeSingle();
+      setOpenShift((data as GuardShift) ?? null);
+      setShiftLoading(false);
+    };
+    loadShift();
+    const shiftChannel = supabase
+      .channel("mantenimiento-shift")
+      .on("postgres_changes", { event: "*", schema: "public", table: "guard_shifts" }, () => loadShift())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(shiftChannel);
+    };
+  }, []);
 
   // Si venimos desde Flota con "Nueva orden", preseleccionamos el vehículo
   // y abrimos el formulario directo.
@@ -95,7 +126,7 @@ function MantenimientoContent() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!work.trim() || !profile) return;
+    if (!work.trim() || !profile || blockedByShift) return;
     setError(null);
 
     const responsiblePerson = personal.find((p) => p.id === responsibleId);
@@ -141,6 +172,7 @@ function MantenimientoContent() {
   };
 
   const handleStatusChange = async (r: MaintenanceRecord, status: MaintenanceStatus) => {
+    if (blockedByShift) return;
     setError(null);
     const { error: updateError } = await supabase
       .from("maintenance_records")
@@ -179,6 +211,7 @@ function MantenimientoContent() {
   };
 
   const handleResponsibleChange = async (r: MaintenanceRecord, newResponsibleId: string) => {
+    if (blockedByShift) return;
     if (newResponsibleId === (r.responsible_id ?? "")) return;
     const responsiblePerson = personal.find((p) => p.id === newResponsibleId);
     const { error: updateError } = await supabase
@@ -204,6 +237,7 @@ function MantenimientoContent() {
   };
 
   const handleDelete = async (r: MaintenanceRecord) => {
+    if (blockedByShift) return;
     if (!window.confirm(`¿Eliminar la orden "${r.work}"? Esta acción no se puede deshacer.`)) {
       return;
     }
@@ -288,14 +322,25 @@ function MantenimientoContent() {
           >
             📥 Exportar
           </button>
-          <button
-            onClick={() => setShowForm((s) => !s)}
-            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-          >
-            + Nueva orden
-          </button>
+          {!blockedByShift && (
+            <button
+              onClick={() => setShowForm((s) => !s)}
+              className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+            >
+              + Nueva orden
+            </button>
+          )}
         </div>
       </div>
+
+      {blockedByShift && (
+        <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Tenés que abrir turno en el Libro de Guardia antes de poder cargar o modificar el mantenimiento.{" "}
+          <Link href="/libro-guardia" className="font-medium underline">
+            Ir a Libro de Guardia
+          </Link>
+        </div>
+      )}
 
       {showExport && (
         <div className="flex flex-wrap items-end gap-2 rounded-xl border border-neutral-200 bg-white p-4">
@@ -341,7 +386,7 @@ function MantenimientoContent() {
         </div>
       )}
 
-      {showForm && (
+      {showForm && !blockedByShift && (
         <form
           onSubmit={handleCreate}
           className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2"
@@ -453,7 +498,8 @@ function MantenimientoContent() {
                     <select
                       value={r.responsible_id ?? ""}
                       onChange={(e) => handleResponsibleChange(r, e.target.value)}
-                      className="w-full rounded-md border border-neutral-300 px-2 py-1 sm:w-64"
+                      disabled={blockedByShift}
+                      className="w-full rounded-md border border-neutral-300 px-2 py-1 sm:w-64 disabled:opacity-60"
                     >
                       <option value="">Sin asignar</option>
                       {personal.map((p) => (
@@ -471,7 +517,8 @@ function MantenimientoContent() {
                     onChange={(e) =>
                       handleStatusChange(r, e.target.value as MaintenanceStatus)
                     }
-                    className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                    disabled={blockedByShift}
+                    className="rounded-md border border-neutral-300 px-2 py-1 text-sm disabled:opacity-60"
                   >
                     {(Object.keys(MAINTENANCE_STATUS_LABELS) as MaintenanceStatus[]).map(
                       (s) => (
@@ -498,12 +545,14 @@ function MantenimientoContent() {
                   >
                     👁️ Vista previa
                   </button>
-                  <button
-                    onClick={() => handleDelete(r)}
-                    className="ml-auto rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                  >
-                    Eliminar
-                  </button>
+                  {!blockedByShift && (
+                    <button
+                      onClick={() => handleDelete(r)}
+                      className="ml-auto rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                    >
+                      Eliminar
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -554,12 +603,14 @@ function MantenimientoContent() {
                         >
                           👁️
                         </button>
-                        <button
-                          onClick={() => handleDelete(r)}
-                          className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                        >
-                          Eliminar
-                        </button>
+                        {!blockedByShift && (
+                          <button
+                            onClick={() => handleDelete(r)}
+                            className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                          >
+                            Eliminar
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -576,6 +627,7 @@ function MantenimientoContent() {
           vehicles={vehicles}
           personal={personal}
           linkedFinding={findingFor(detailRecord.id)}
+          blockedByShift={blockedByShift}
           onClose={() => setDetailRecord(null)}
           onSaved={() => {
             setDetailRecord(null);

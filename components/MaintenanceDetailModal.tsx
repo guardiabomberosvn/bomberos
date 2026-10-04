@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { notifyResponsible } from "@/lib/maintenance";
 import { EditFindingModal } from "@/components/EditFindingModal";
@@ -31,6 +32,7 @@ export function MaintenanceDetailModal({
   vehicles,
   personal,
   linkedFinding,
+  blockedByShift = false,
   onClose,
   onSaved,
   onFindingChanged,
@@ -39,6 +41,9 @@ export function MaintenanceDetailModal({
   vehicles: Vehicle[];
   personal: Profile[];
   linkedFinding: MaintenanceFinding | null;
+  // Si es guardia y no tiene turno abierto, puede ver el detalle pero no
+  // guardar cambios ni tocar el hallazgo vinculado.
+  blockedByShift?: boolean;
   onClose: () => void;
   onSaved: () => void;
   onFindingChanged: () => void;
@@ -63,6 +68,7 @@ export function MaintenanceDetailModal({
   const toNumberOrNull = (v: string) => (v.trim() ? Number(v) : null);
 
   const handleSave = async () => {
+    if (blockedByShift) return;
     setError(null);
     if (!work.trim()) {
       setError("El trabajo no puede estar vacío.");
@@ -134,6 +140,15 @@ export function MaintenanceDetailModal({
       >
         <h2 className="text-lg font-semibold text-neutral-900">Detalle de la orden</h2>
 
+        {blockedByShift && (
+          <div className="mb-3 mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Tenés que abrir turno en el Libro de Guardia para poder guardar cambios acá.{" "}
+            <Link href="/libro-guardia" className="font-medium underline">
+              Ir a Libro de Guardia
+            </Link>
+          </div>
+        )}
+
         {error && (
           <div className="mb-3 mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
@@ -176,14 +191,17 @@ export function MaintenanceDetailModal({
                   📷 Ver foto completa
                 </a>
               )}
-              <button
-                type="button"
-                onClick={() => setEditingFinding(true)}
-                className="inline-flex items-center gap-1 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-50"
-              >
-                ✏️ Editar hallazgo
-              </button>
-              <button
+              {!blockedByShift && (
+                <button
+                  type="button"
+                  onClick={() => setEditingFinding(true)}
+                  className="inline-flex items-center gap-1 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-50"
+                >
+                  ✏️ Editar hallazgo
+                </button>
+              )}
+              {!blockedByShift && (
+                <button
                 type="button"
                 onClick={async () => {
                   if (
@@ -201,7 +219,8 @@ export function MaintenanceDetailModal({
                 className="inline-flex items-center gap-1 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-60"
               >
                 {deletingFinding ? "Eliminando…" : "🗑️ Eliminar hallazgo"}
-              </button>
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -351,13 +370,15 @@ export function MaintenanceDetailModal({
           >
             Cancelar
           </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-60"
-          >
-            {saving ? "Guardando…" : "Guardar cambios"}
-          </button>
+          {!blockedByShift && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-60"
+            >
+              {saving ? "Guardando…" : "Guardar cambios"}
+            </button>
+          )}
         </div>
       </div>
     </div>

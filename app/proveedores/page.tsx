@@ -1,22 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { exportMultiSheetExcel } from "@/lib/export";
-import type { Supplier, SupplierPurchase } from "@/lib/types";
+import type { GuardShift, Supplier, SupplierPurchase } from "@/lib/types";
 
 function SupplierCard({
   supplier,
   purchases,
+  blockedByShift,
   onChanged,
   onEdit,
   onDelete,
 }: {
   supplier: Supplier;
   purchases: SupplierPurchase[];
+  blockedByShift: boolean;
   onChanged: () => void;
   onEdit: (s: Supplier) => void;
   onDelete: (s: Supplier) => void;
@@ -46,7 +49,7 @@ function SupplierCard({
 
   const handleCreatePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description.trim() || !profile) return;
+    if (!description.trim() || !profile || blockedByShift) return;
     setError(null);
     const amountValue = amount.trim() ? Number(amount) : null;
     if (amount.trim() && Number.isNaN(amountValue)) {
@@ -76,6 +79,7 @@ function SupplierCard({
   };
 
   const handleDeletePurchase = async (p: SupplierPurchase) => {
+    if (blockedByShift) return;
     if (!window.confirm("¿Eliminar esta compra del historial?")) return;
     const { error: deleteError } = await supabase.from("supplier_purchases").delete().eq("id", p.id);
     if (deleteError) setError(deleteError.message);
@@ -149,6 +153,15 @@ function SupplierCard({
         )}
       </div>
 
+      {blockedByShift && (
+        <div className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Tenés que abrir turno en el Libro de Guardia antes de poder cargar proveedores o compras.{" "}
+          <Link href="/libro-guardia" className="font-medium underline">
+            Ir a Libro de Guardia
+          </Link>
+        </div>
+      )}
+
       {error && (
         <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
       )}
@@ -160,27 +173,33 @@ function SupplierCard({
         >
           {expanded ? "Ocultar historial" : `📜 Ver historial (${filteredPurchases.length})`}
         </button>
-        <button
-          onClick={() => setShowPurchaseForm((s) => !s)}
-          className="rounded-md bg-brand px-2 py-1 text-xs font-medium text-white hover:bg-brand-dark"
-        >
-          + Registrar compra
-        </button>
-        <button
-          onClick={() => onEdit(supplier)}
-          className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
-        >
-          Editar
-        </button>
-        <button
-          onClick={() => onDelete(supplier)}
-          className="ml-auto rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-        >
-          Dar de baja
-        </button>
+        {!blockedByShift && (
+          <button
+            onClick={() => setShowPurchaseForm((s) => !s)}
+            className="rounded-md bg-brand px-2 py-1 text-xs font-medium text-white hover:bg-brand-dark"
+          >
+            + Registrar compra
+          </button>
+        )}
+        {!blockedByShift && (
+          <button
+            onClick={() => onEdit(supplier)}
+            className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+          >
+            Editar
+          </button>
+        )}
+        {!blockedByShift && (
+          <button
+            onClick={() => onDelete(supplier)}
+            className="ml-auto rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+          >
+            Dar de baja
+          </button>
+        )}
       </div>
 
-      {showPurchaseForm && (
+      {showPurchaseForm && !blockedByShift && (
         <form
           onSubmit={handleCreatePurchase}
           className="mt-3 grid grid-cols-1 gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 sm:grid-cols-2"
@@ -250,12 +269,14 @@ function SupplierCard({
                         {p.amount != null ? `$${p.amount.toLocaleString("es-AR")}` : "—"}
                       </td>
                       <td className="px-3 py-1.5">
-                        <button
-                          onClick={() => handleDeletePurchase(p)}
-                          className="rounded-md border border-red-300 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50"
-                        >
-                          Eliminar
-                        </button>
+                        {!blockedByShift && (
+                          <button
+                            onClick={() => handleDeletePurchase(p)}
+                            className="rounded-md border border-red-300 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                          >
+                            Eliminar
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -294,6 +315,35 @@ function ProveedoresContent() {
   const [showExport, setShowExport] = useState(false);
   const [exportFrom, setExportFrom] = useState("");
   const [exportTo, setExportTo] = useState("");
+
+  // Un guardia tiene que haber abierto turno en el Libro de Guardia antes de
+  // poder cargar proveedores o compras — admin y jefatura no dependen de
+  // esto.
+  const [openShift, setOpenShift] = useState<GuardShift | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
+  const isGuardiaRole = profile?.role === "guardia";
+  const blockedByShift = isGuardiaRole && !openShift;
+
+  useEffect(() => {
+    const loadShift = async () => {
+      setShiftLoading(true);
+      const { data } = await supabase
+        .from("guard_shifts")
+        .select("*")
+        .is("closed_at", null)
+        .maybeSingle();
+      setOpenShift((data as GuardShift) ?? null);
+      setShiftLoading(false);
+    };
+    loadShift();
+    const shiftChannel = supabase
+      .channel("proveedores-shift")
+      .on("postgres_changes", { event: "*", schema: "public", table: "guard_shifts" }, () => loadShift())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(shiftChannel);
+    };
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -391,7 +441,7 @@ function ProveedoresContent() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !profile) return;
+    if (!name.trim() || !profile || blockedByShift) return;
     setError(null);
     const { error: insertError } = await supabase.from("suppliers").insert({
       organization_id: profile.organization_id,
@@ -427,7 +477,7 @@ function ProveedoresContent() {
   };
 
   const confirmEdit = async () => {
-    if (!editingSupplier || !editName.trim()) return;
+    if (!editingSupplier || !editName.trim() || blockedByShift) return;
     const { error: updateError } = await supabase
       .from("suppliers")
       .update({
@@ -446,6 +496,7 @@ function ProveedoresContent() {
   };
 
   const handleDelete = async (s: Supplier) => {
+    if (blockedByShift) return;
     if (
       !window.confirm(
         `¿Dar de baja a "${s.name}"? No se borra el historial de compras, pero deja de aparecer en el listado.`
@@ -472,14 +523,25 @@ function ProveedoresContent() {
           >
             📥 Exportar
           </button>
-          <button
-            onClick={() => setShowForm((s) => !s)}
-            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-          >
-            + Nuevo proveedor
-          </button>
+          {!blockedByShift && (
+            <button
+              onClick={() => setShowForm((s) => !s)}
+              className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+            >
+              + Nuevo proveedor
+            </button>
+          )}
         </div>
       </div>
+
+      {blockedByShift && (
+        <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Tenés que abrir turno en el Libro de Guardia antes de poder cargar proveedores o compras.{" "}
+          <Link href="/libro-guardia" className="font-medium underline">
+            Ir a Libro de Guardia
+          </Link>
+        </div>
+      )}
 
       {showExport && (
         <div className="flex flex-wrap items-end gap-2 rounded-xl border border-neutral-200 bg-white p-4">
@@ -518,7 +580,7 @@ function ProveedoresContent() {
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
       )}
 
-      {showForm && (
+      {showForm && !blockedByShift && (
         <form
           onSubmit={handleCreate}
           className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2"
@@ -583,6 +645,7 @@ function ProveedoresContent() {
               key={s.id}
               supplier={s}
               purchases={purchasesFor(s.id)}
+              blockedByShift={blockedByShift}
               onChanged={load}
               onEdit={openEdit}
               onDelete={handleDelete}
@@ -662,13 +725,15 @@ function ProveedoresContent() {
               >
                 Cancelar
               </button>
-              <button
-                onClick={confirmEdit}
-                disabled={!editName.trim()}
-                className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-60"
-              >
-                Guardar
-              </button>
+              {!blockedByShift && (
+                <button
+                  onClick={confirmEdit}
+                  disabled={!editName.trim()}
+                  className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-60"
+                >
+                  Guardar
+                </button>
+              )}
             </div>
           </div>
         </div>
