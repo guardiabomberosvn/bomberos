@@ -12,7 +12,8 @@ import type { Emergency, Profile, Vehicle } from "@/lib/types";
 
 function DashboardContent() {
   const { profile } = useAuth();
-  const isStaff = profile?.role === "admin" || profile?.role === "guardia";
+  const isStaff =
+    profile?.role === "admin" || profile?.role === "guardia" || profile?.role === "jefatura";
   const [personal, setPersonal] = useState<Profile[]>([]);
   const [presentesIds, setPresentesIds] = useState<Set<string>>(new Set());
   const [activeEmergencies, setActiveEmergencies] = useState<Emergency[]>([]);
@@ -175,96 +176,134 @@ function DashboardContent() {
         </Link>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard
-          label="Disponibles"
-          value={disponibles.length}
-          icon="✅"
-          accent="text-emerald-600"
-        />
-        <StatCard
-          label="Presentes en el cuartel"
-          value={presentes.length}
-          icon="🏠"
-          accent="text-brand"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-card">
-          <div className="border-b border-black/[0.06] px-5 py-3.5">
-            <h2 className="text-[15px] font-semibold text-ink-900">
-              Personal disponible ahora
-            </h2>
+      {isStaff ? (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <StatCard
+              label="Disponibles"
+              value={disponibles.length}
+              icon="✅"
+              accent="text-emerald-600"
+            />
+            <StatCard
+              label="Presentes en el cuartel"
+              value={presentes.length}
+              icon="🏠"
+              accent="text-brand"
+            />
           </div>
-          {loading ? (
-            <p className="px-5 py-8 text-sm text-ink-400">Cargando…</p>
-          ) : disponibles.length === 0 ? (
-            <p className="px-5 py-8 text-sm text-ink-400">
-              No hay nadie marcado como disponible en este momento.
-            </p>
-          ) : (
-            <ul className="divide-y divide-black/[0.05]">
-              {disponibles.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex items-center justify-between px-5 py-3.5"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-ink-900">{p.full_name}</p>
-                    <p className="text-xs text-ink-400">
-                      {p.rank ?? "Bombero"}
-                      {p.legajo ? ` · Legajo ${p.legajo}` : ""}
-                    </p>
-                  </div>
-                  {presentesIds.has(p.id) && (
-                    <span className="rounded-full bg-brand-light px-2.5 py-1 text-xs font-medium text-brand-dark">
-                      En el cuartel
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
 
-        <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-card">
-          <div className="border-b border-black/[0.06] px-5 py-3.5">
-            <h2 className="text-[15px] font-semibold text-ink-900">
-              Presentes en el cuartel ahora
-            </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-card">
+              <div className="border-b border-black/[0.06] px-5 py-3.5">
+                <h2 className="text-[15px] font-semibold text-ink-900">
+                  Personal disponible ahora
+                </h2>
+              </div>
+              {loading ? (
+                <p className="px-5 py-8 text-sm text-ink-400">Cargando…</p>
+              ) : disponibles.length === 0 ? (
+                <p className="px-5 py-8 text-sm text-ink-400">
+                  No hay nadie marcado como disponible en este momento.
+                </p>
+              ) : (
+                <ul className="divide-y divide-black/[0.05]">
+                  {disponibles.map((p) => (
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between px-5 py-3.5"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-ink-900">{p.full_name}</p>
+                        <p className="text-xs text-ink-400">
+                          {p.rank ?? "Bombero"}
+                          {p.legajo ? ` · Legajo ${p.legajo}` : ""}
+                        </p>
+                      </div>
+                      {presentesIds.has(p.id) && (
+                        <span className="rounded-full bg-brand-light px-2.5 py-1 text-xs font-medium text-brand-dark">
+                          En el cuartel
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-card">
+              <div className="border-b border-black/[0.06] px-5 py-3.5">
+                <h2 className="text-[15px] font-semibold text-ink-900">
+                  Presentes en el cuartel ahora
+                </h2>
+              </div>
+              {loading ? (
+                <p className="px-5 py-8 text-sm text-ink-400">Cargando…</p>
+              ) : presentes.length === 0 ? (
+                <p className="px-5 py-8 text-sm text-ink-400">
+                  No hay nadie marcado como presente en el cuartel en este momento.
+                </p>
+              ) : (
+                <ul className="divide-y divide-black/[0.05]">
+                  {presentes.map((p) => (
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between px-5 py-3.5"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-ink-900">{p.full_name}</p>
+                        <p className="text-xs text-ink-400">
+                          {p.rank ?? "Bombero"}
+                          {p.legajo ? ` · Legajo ${p.legajo}` : ""}
+                        </p>
+                      </div>
+                      {p.availability === "disponible" && (
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                          Disponible
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
-          {loading ? (
-            <p className="px-5 py-8 text-sm text-ink-400">Cargando…</p>
-          ) : presentes.length === 0 ? (
-            <p className="px-5 py-8 text-sm text-ink-400">
-              No hay nadie marcado como presente en el cuartel en este momento.
+        </>
+      ) : (
+        // Un bombero no ve quiénes están disponibles ni quiénes están en el
+        // cuartel (eso queda para guardia/jefatura/admin) — en su lugar,
+        // accesos directos a lo que sí usa todos los días.
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Link
+            href="/asistencia"
+            className="block rounded-2xl border border-black/[0.06] bg-white p-5 shadow-card transition-colors hover:bg-neutral-50"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-ink-400">Mi asistencia</p>
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 text-base">
+                🕐
+              </span>
+            </div>
+            <p className="mt-3 text-[15px] font-semibold text-ink-900">
+              Ver mi historial de ingresos y salidas
             </p>
-          ) : (
-            <ul className="divide-y divide-black/[0.05]">
-              {presentes.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex items-center justify-between px-5 py-3.5"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-ink-900">{p.full_name}</p>
-                    <p className="text-xs text-ink-400">
-                      {p.rank ?? "Bombero"}
-                      {p.legajo ? ` · Legajo ${p.legajo}` : ""}
-                    </p>
-                  </div>
-                  {p.availability === "disponible" && (
-                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                      Disponible
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
+          </Link>
+          <Link
+            href="/escanear"
+            className="block rounded-2xl border border-black/[0.06] bg-white p-5 shadow-card transition-colors hover:bg-neutral-50"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-ink-400">Escanear QR</p>
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 text-base">
+                📷
+              </span>
+            </div>
+            <p className="mt-3 text-[15px] font-semibold text-ink-900">
+              Marcar mi ingreso o salida
+            </p>
+          </Link>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -87,7 +87,7 @@ export function EditProfileModal({
               onChange={(e) => setRole(e.target.value as Role)}
               className="w-full rounded-md border border-neutral-300 px-3 py-2"
             >
-              {(["admin", "guardia", "bombero"] as Role[]).map((r) => (
+              {(["admin", "guardia", "jefatura", "bombero"] as Role[]).map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABELS[r]}
                 </option>

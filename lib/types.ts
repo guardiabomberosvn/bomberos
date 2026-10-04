@@ -1,4 +1,4 @@
-export type Role = "admin" | "guardia" | "bombero";
+export type Role = "admin" | "guardia" | "jefatura" | "bombero";
 export type Availability = "disponible" | "no_disponible";
 
 export interface Profile {
@@ -88,6 +88,7 @@ export interface Organization {
 export const ROLE_LABELS: Record<Role, string> = {
   admin: "Administrador",
   guardia: "Guardia",
+  jefatura: "Jefatura",
   bombero: "Bombero",
 };
 
