@@ -33,6 +33,8 @@ export type SectionKey =
   | "grupos"
   | "motivos"
   | "notificaciones"
+  | "emergencias"
+  | "hallazgos"
   | "checkin"
   // No es una página propia: controla, adentro de "Asistencia (todos)", si
   // esa persona ve el resumen de horas/puntos y el ranking "Puntaje por
@@ -57,6 +59,12 @@ export const SECTIONS: SectionDef[] = [
   // alguien puntual igual que cualquier otra sección.
   { key: "asistencia", label: "Mi asistencia", icon: "🕐", href: "/asistencia", group: "general", legacyRoles: ["admin", "guardia", "jefatura", "bombero"] },
   { key: "escanear", label: "Escanear QR", icon: "📷", href: "/escanear", group: "general", legacyRoles: ["admin", "guardia", "jefatura", "bombero"] },
+  // Emergencias y Hallazgos antes eran links fijos en el menú, visibles para
+  // cualquiera con sesión sin forma de restringirlos. Ahora son una sección
+  // más: por defecto siguen habilitados para todos los roles (nadie pierde
+  // acceso), pero ya se pueden personalizar por persona desde Administración.
+  { key: "emergencias", label: "Emergencias", icon: "🚨", href: "/emergencias", group: "general", legacyRoles: ["admin", "guardia", "jefatura", "bombero"] },
+  { key: "hallazgos", label: "Hallazgos", icon: "🚧", href: "/hallazgos", group: "general", legacyRoles: ["admin", "guardia", "jefatura", "bombero"] },
   // La campanita de notificaciones (stock, entradas/salidas, disponibilidad,
   // hallazgos, mantenimiento) tiene su propio botón en el encabezado, no un
   // link de menú común — ver la exclusión en AppShell.navItemsForGroup. Por

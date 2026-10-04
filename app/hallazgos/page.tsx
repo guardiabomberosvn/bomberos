@@ -303,7 +303,7 @@ function HallazgosContent() {
 
 export default function HallazgosPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute section="hallazgos">
       <AppShell>
         <HallazgosContent />
       </AppShell>

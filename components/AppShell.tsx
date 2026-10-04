@@ -15,14 +15,10 @@ interface NavItem {
   icon: string;
 }
 
-// Dashboard, Mi asistencia y Escanear QR ahora también se pueden restringir
-// por persona (grupo "general" en lib/permissions.ts), así que salen de acá
-// y se arman dinámicos como el resto. Estos 2 quedan siempre visibles para
-// cualquiera con sesión activa.
-const NAV_ITEMS: NavItem[] = [
-  { href: "/emergencias", label: "Emergencias", icon: "🚨" },
-  { href: "/hallazgos", label: "Hallazgos", icon: "🚧" },
-];
+// Dashboard, Mi asistencia, Escanear QR, Emergencias y Hallazgos ahora
+// también se pueden restringir por persona (grupo "general" en
+// lib/permissions.ts), así que se arman todas dinámicas — ver
+// navItemsForGroup más abajo.
 
 const ACCOUNT_NAV_ITEMS: NavItem[] = [
   { href: "/vincular-telegram", label: "Alertas por Telegram", icon: "✈️" },
@@ -271,7 +267,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isAdmin = profile?.role === "admin";
 
-  const primaryItems = [...navItemsForGroup(profile, "general"), ...NAV_ITEMS];
+  const primaryItems = navItemsForGroup(profile, "general");
   const guardiaItems = navItemsForGroup(profile, "libroGuardia");
   const operationItems = navItemsForGroup(profile, "operacion");
   const adminItems = navItemsForGroup(profile, "configuracion");

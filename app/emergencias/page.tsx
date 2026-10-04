@@ -450,7 +450,7 @@ function EmergenciasContent() {
 
 export default function EmergenciasPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute section="emergencias">
       <AppShell>
         <EmergenciasContent />
       </AppShell>
