@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { exportMultiSheetExcel } from "@/lib/export";
-import type { StockItem, StockWithdrawal } from "@/lib/types";
+import type { GuardShift, StockItem, StockWithdrawal } from "@/lib/types";
 
 type SubTab = "stock" | "retiros";
 
@@ -39,6 +40,35 @@ function StockContent() {
   const [wWithdrawnBy, setWWithdrawnBy] = useState("");
   const [wDestination, setWDestination] = useState("");
   const [wNotes, setWNotes] = useState("");
+
+  // Un guardia tiene que haber abierto turno en el Libro de Guardia antes de
+  // poder cargar o modificar nada en Stock — admin y jefatura no dependen de
+  // esto.
+  const [openShift, setOpenShift] = useState<GuardShift | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
+  const isGuardiaRole = profile?.role === "guardia";
+  const blockedByShift = isGuardiaRole && !openShift;
+
+  useEffect(() => {
+    const loadShift = async () => {
+      setShiftLoading(true);
+      const { data } = await supabase
+        .from("guard_shifts")
+        .select("*")
+        .is("closed_at", null)
+        .maybeSingle();
+      setOpenShift((data as GuardShift) ?? null);
+      setShiftLoading(false);
+    };
+    loadShift();
+    const shiftChannel = supabase
+      .channel("stock-shift")
+      .on("postgres_changes", { event: "*", schema: "public", table: "guard_shifts" }, () => loadShift())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(shiftChannel);
+    };
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -89,7 +119,7 @@ function StockContent() {
 
   const handleCreateItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!itemName.trim() || !profile) return;
+    if (!itemName.trim() || !profile || blockedByShift) return;
     setError(null);
 
     const { error: insertError } = await supabase.from("stock_items").insert({
@@ -121,7 +151,7 @@ function StockContent() {
   };
 
   const confirmEditItem = async () => {
-    if (!editingItem || !editName.trim()) return;
+    if (!editingItem || !editName.trim() || blockedByShift) return;
     const { error: updateError } = await supabase
       .from("stock_items")
       .update({
@@ -138,6 +168,7 @@ function StockContent() {
   };
 
   const handleDeleteItem = async (item: StockItem) => {
+    if (blockedByShift) return;
     if (
       !window.confirm(
         `¿Dar de baja "${item.name}"? No se borra el historial de retiros, pero deja de aparecer en el listado.`
@@ -155,7 +186,7 @@ function StockContent() {
 
   const handleCreateWithdrawal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!wItemId || !wQuantity || !profile) return;
+    if (!wItemId || !wQuantity || !profile || blockedByShift) return;
     setError(null);
 
     const { data: openShift } = await supabase
@@ -190,6 +221,7 @@ function StockContent() {
   };
 
   const handleDeleteWithdrawal = async (w: StockWithdrawal) => {
+    if (blockedByShift) return;
     if (!window.confirm("¿Eliminar este retiro? El stock se recalcula automáticamente.")) return;
     const { error: deleteError } = await supabase.from("stock_withdrawals").delete().eq("id", w.id);
     if (deleteError) setError(deleteError.message);
@@ -245,6 +277,16 @@ function StockContent() {
         </button>
       </div>
 
+      {blockedByShift && (
+        <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Tenés que abrir turno en el Libro de Guardia antes de poder cargar o
+          modificar algo en Stock.{" "}
+          <Link href="/libro-guardia" className="font-medium underline">
+            Ir a Libro de Guardia
+          </Link>
+        </div>
+      )}
+
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
       )}
@@ -288,15 +330,17 @@ function StockContent() {
       {subTab === "stock" && (
         <div className="space-y-4">
           <div className="flex justify-end">
-            <button
-              onClick={() => setShowItemForm((s) => !s)}
-              className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-            >
-              + Nuevo insumo
-            </button>
+            {!blockedByShift && (
+              <button
+                onClick={() => setShowItemForm((s) => !s)}
+                className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+              >
+                + Nuevo insumo
+              </button>
+            )}
           </div>
 
-          {showItemForm && (
+          {showItemForm && !blockedByShift && (
             <form
               onSubmit={handleCreateItem}
               className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2"
@@ -383,20 +427,22 @@ function StockContent() {
                           {isLow ? " ⚠️" : ""}
                         </td>
                         <td className="px-4 py-2">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => openEditItem(i)}
-                              className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
-                            >
-                              Recargar / editar
-                            </button>
-                            <button
-                              onClick={() => handleDeleteItem(i)}
-                              className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                            >
-                              Dar de baja
-                            </button>
-                          </div>
+                          {!blockedByShift && (
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => openEditItem(i)}
+                                className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                              >
+                                Recargar / editar
+                              </button>
+                              <button
+                                onClick={() => handleDeleteItem(i)}
+                                className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                              >
+                                Dar de baja
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -411,12 +457,14 @@ function StockContent() {
       {subTab === "retiros" && (
         <div className="space-y-4">
           <div className="flex justify-end">
-            <button
-              onClick={() => setShowWithdrawalForm((s) => !s)}
-              className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-            >
-              + Registrar retiro
-            </button>
+            {!blockedByShift && (
+              <button
+                onClick={() => setShowWithdrawalForm((s) => !s)}
+                className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+              >
+                + Registrar retiro
+              </button>
+            )}
           </div>
 
           {items.length === 0 && (
@@ -425,7 +473,7 @@ function StockContent() {
             </p>
           )}
 
-          {showWithdrawalForm && (
+          {showWithdrawalForm && !blockedByShift && (
             <form
               onSubmit={handleCreateWithdrawal}
               className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2"
@@ -518,12 +566,14 @@ function StockContent() {
                       <td className="px-4 py-2 text-neutral-600">{w.withdrawn_by ?? "—"}</td>
                       <td className="px-4 py-2 text-neutral-600">{w.destination ?? "—"}</td>
                       <td className="px-4 py-2">
-                        <button
-                          onClick={() => handleDeleteWithdrawal(w)}
-                          className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                        >
-                          Eliminar
-                        </button>
+                        {!blockedByShift && (
+                          <button
+                            onClick={() => handleDeleteWithdrawal(w)}
+                            className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                          >
+                            Eliminar
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))

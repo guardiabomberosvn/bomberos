@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { exportToExcel } from "@/lib/export";
-import type { FuelLoad, Vehicle } from "@/lib/types";
+import type { FuelLoad, GuardShift, Vehicle } from "@/lib/types";
 
 function CombustibleContent() {
   const { profile } = useAuth();
@@ -20,6 +21,35 @@ function CombustibleContent() {
   const [km, setKm] = useState("");
   const [cost, setCost] = useState("");
   const [vehicleSearch, setVehicleSearch] = useState("");
+
+  // Un guardia tiene que haber abierto turno en el Libro de Guardia antes de
+  // poder registrar o eliminar una carga de combustible — admin y jefatura
+  // no dependen de esto.
+  const [openShift, setOpenShift] = useState<GuardShift | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
+  const isGuardiaRole = profile?.role === "guardia";
+  const blockedByShift = isGuardiaRole && !openShift;
+
+  useEffect(() => {
+    const loadShift = async () => {
+      setShiftLoading(true);
+      const { data } = await supabase
+        .from("guard_shifts")
+        .select("*")
+        .is("closed_at", null)
+        .maybeSingle();
+      setOpenShift((data as GuardShift) ?? null);
+      setShiftLoading(false);
+    };
+    loadShift();
+    const shiftChannel = supabase
+      .channel("combustible-shift")
+      .on("postgres_changes", { event: "*", schema: "public", table: "guard_shifts" }, () => loadShift())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(shiftChannel);
+    };
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -135,7 +165,7 @@ function CombustibleContent() {
     e.preventDefault();
     if (!vehicleId || !liters) return;
     setError(null);
-    if (!profile) return;
+    if (!profile || blockedByShift) return;
 
     const { error: insertError } = await supabase.from("fuel_loads").insert({
       organization_id: profile.organization_id,
@@ -159,6 +189,7 @@ function CombustibleContent() {
   };
 
   const handleDelete = async (l: FuelLoad) => {
+    if (blockedByShift) return;
     if (!window.confirm("¿Eliminar esta carga de combustible?")) return;
     const { error: deleteError } = await supabase.from("fuel_loads").delete().eq("id", l.id);
     if (deleteError) setError(deleteError.message);
@@ -190,14 +221,25 @@ function CombustibleContent() {
           >
             📥 Exportar
           </button>
-          <button
-            onClick={() => setShowForm((s) => !s)}
-            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-          >
-            + Registrar carga
-          </button>
+          {!blockedByShift && (
+            <button
+              onClick={() => setShowForm((s) => !s)}
+              className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+            >
+              + Registrar carga
+            </button>
+          )}
         </div>
       </div>
+
+      {blockedByShift && (
+        <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Tenés que abrir turno en el Libro de Guardia antes de poder registrar o eliminar cargas de combustible.{" "}
+          <Link href="/libro-guardia" className="font-medium underline">
+            Ir a Libro de Guardia
+          </Link>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -295,7 +337,7 @@ function CombustibleContent() {
         )}
       </div>
 
-      {showForm && (
+      {showForm && !blockedByShift && (
         <form
           onSubmit={handleCreate}
           className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:grid-cols-2"
@@ -396,12 +438,14 @@ function CombustibleContent() {
                       )}
                     </td>
                     <td className="px-4 py-2">
-                      <button
-                        onClick={() => handleDelete(l)}
-                        className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                      >
-                        Eliminar
-                      </button>
+                      {!blockedByShift && (
+                        <button
+                          onClick={() => handleDelete(l)}
+                          className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                        >
+                          Eliminar
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

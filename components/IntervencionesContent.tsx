@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
@@ -10,6 +11,7 @@ import { NameListEditor } from "@/components/NameListEditor";
 import { supabase } from "@/lib/supabase";
 import { exportToExcel } from "@/lib/export";
 import type {
+  GuardShift,
   IncidentCategory,
   Intervention,
   InterventionUnit,
@@ -56,6 +58,35 @@ export function IntervencionesContent() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showStats, setShowStats] = useState(true);
+
+  // Un guardia tiene que haber abierto turno en el Libro de Guardia antes de
+  // poder cargar o modificar intervenciones — admin y jefatura no dependen
+  // de esto.
+  const [openShift, setOpenShift] = useState<GuardShift | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
+  const isGuardiaRole = profile?.role === "guardia";
+  const blockedByShift = isGuardiaRole && !openShift;
+
+  useEffect(() => {
+    const loadShift = async () => {
+      setShiftLoading(true);
+      const { data } = await supabase
+        .from("guard_shifts")
+        .select("*")
+        .is("closed_at", null)
+        .maybeSingle();
+      setOpenShift((data as GuardShift) ?? null);
+      setShiftLoading(false);
+    };
+    loadShift();
+    const shiftChannel = supabase
+      .channel("intervenciones-shift")
+      .on("postgres_changes", { event: "*", schema: "public", table: "guard_shifts" }, () => loadShift())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(shiftChannel);
+    };
+  }, []);
 
   const [showForm, setShowForm] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -210,6 +241,7 @@ export function IntervencionesContent() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (blockedByShift) return;
     if (!profile) {
       setError("No se pudo identificar tu usuario. Recargá la página e iniciá sesión de nuevo.");
       return;
@@ -323,6 +355,7 @@ export function IntervencionesContent() {
   };
 
   const handleAddUnit = async (interventionId: string) => {
+    if (blockedByShift) return;
     if (!unitVehicleId) return;
     const { error: insertError } = await supabase.from("intervention_units").insert({
       intervention_id: interventionId,
@@ -359,7 +392,7 @@ export function IntervencionesContent() {
   };
 
   const confirmEditUnit = async () => {
-    if (!editingUnit) return;
+    if (!editingUnit || blockedByShift) return;
     const { error: updateError } = await supabase
       .from("intervention_units")
       .update({
@@ -376,6 +409,7 @@ export function IntervencionesContent() {
   };
 
   const handleDeleteIntervention = async (i: Intervention) => {
+    if (blockedByShift) return;
     if (!window.confirm(`¿Eliminar la intervención "${i.title}"? También se borran sus unidades, vehículos y damnificados.`)) {
       return;
     }
@@ -385,6 +419,7 @@ export function IntervencionesContent() {
   };
 
   const handleDeleteUnit = async (unit: InterventionUnit) => {
+    if (blockedByShift) return;
     if (!window.confirm(`¿Quitar la unidad "${vehicleName(unit.vehicle_id)}" de esta intervención?`)) {
       return;
     }
@@ -397,6 +432,7 @@ export function IntervencionesContent() {
   };
 
   const handleAddDamagedVehicle = async (interventionId: string) => {
+    if (blockedByShift) return;
     const { error: insertError } = await supabase.from("intervention_damaged_vehicles").insert({
       intervention_id: interventionId,
       vehicle_number: vehicleForm.vehicle_number ?? null,
@@ -413,6 +449,7 @@ export function IntervencionesContent() {
   };
 
   const handleDeleteDamagedVehicle = async (dv: InterventionDamagedVehicle) => {
+    if (blockedByShift) return;
     const label = [dv.brand, dv.model, dv.plate].filter(Boolean).join(" · ") || "este vehículo";
     if (!window.confirm(`¿Quitar ${label} de los vehículos siniestrados de esta intervención?`)) {
       return;
@@ -423,6 +460,7 @@ export function IntervencionesContent() {
   };
 
   const handleAddVictim = async (interventionId: string) => {
+    if (blockedByShift) return;
     const { error: insertError } = await supabase.from("intervention_victims").insert({
       intervention_id: interventionId,
       vehicle_number: victimForm.vehicle_number ?? null,
@@ -449,6 +487,7 @@ export function IntervencionesContent() {
   };
 
   const handleDeleteVictim = async (victim: InterventionVictim) => {
+    if (blockedByShift) return;
     if (
       !window.confirm(
         `¿Quitar a ${victim.full_name || "este damnificado"} de esta intervención?`
@@ -593,14 +632,25 @@ export function IntervencionesContent() {
           >
             📥 Exportar
           </button>
-          <button
-            onClick={() => setShowForm((s) => !s)}
-            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-          >
-            + Nueva intervención
-          </button>
+          {!blockedByShift && (
+            <button
+              onClick={() => setShowForm((s) => !s)}
+              className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+            >
+              + Nueva intervención
+            </button>
+          )}
         </div>
       </div>
+
+      {blockedByShift && (
+        <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Tenés que abrir turno en el Libro de Guardia antes de poder cargar o modificar intervenciones.{" "}
+          <Link href="/libro-guardia" className="font-medium underline">
+            Ir a Libro de Guardia
+          </Link>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -643,7 +693,7 @@ export function IntervencionesContent() {
         )}
       </div>
 
-      {showForm && (
+      {showForm && !blockedByShift && (
         <form
           ref={formRef}
           onSubmit={handleCreate}
@@ -1083,12 +1133,14 @@ export function IntervencionesContent() {
                           ✅ Marcar como revisado
                         </button>
                       )}
-                      <button
-                        onClick={() => handleDeleteIntervention(i)}
-                        className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
-                      >
-                        Eliminar intervención
-                      </button>
+                      {!blockedByShift && (
+                        <button
+                          onClick={() => handleDeleteIntervention(i)}
+                          className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                        >
+                          Eliminar intervención
+                        </button>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
@@ -1172,18 +1224,22 @@ export function IntervencionesContent() {
                                   </p>
                                 </div>
                                 <div className="flex shrink-0 gap-3">
-                                  <button
-                                    onClick={() => openEditUnit(u)}
-                                    className="text-xs font-medium text-brand hover:underline"
-                                  >
-                                    Editar
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteUnit(u)}
-                                    className="text-xs font-medium text-red-700 hover:underline"
-                                  >
-                                    Quitar
-                                  </button>
+                                  {!blockedByShift && (
+                                    <>
+                                      <button
+                                        onClick={() => openEditUnit(u)}
+                                        className="text-xs font-medium text-brand hover:underline"
+                                      >
+                                        Editar
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteUnit(u)}
+                                        className="text-xs font-medium text-red-700 hover:underline"
+                                      >
+                                        Quitar
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </li>
                             );
@@ -1191,7 +1247,7 @@ export function IntervencionesContent() {
                         </ul>
                       )}
 
-                      {addingUnitTo === i.id ? (
+                      {!blockedByShift && (addingUnitTo === i.id ? (
                         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                           <select
                             value={unitVehicleId}
@@ -1241,7 +1297,7 @@ export function IntervencionesContent() {
                         >
                           + Agregar unidad
                         </button>
-                      )}
+                      ))}
                     </div>
 
                     <div>
@@ -1260,18 +1316,20 @@ export function IntervencionesContent() {
                                 {dv.insurance ? ` · Seguro: ${dv.insurance}` : ""}
                                 {dv.policy_number ? ` (Póliza ${dv.policy_number})` : ""}
                               </span>
-                              <button
-                                onClick={() => handleDeleteDamagedVehicle(dv)}
-                                className="text-xs font-medium text-red-700 hover:underline"
-                              >
-                                Quitar
-                              </button>
+                              {!blockedByShift && (
+                                <button
+                                  onClick={() => handleDeleteDamagedVehicle(dv)}
+                                  className="text-xs font-medium text-red-700 hover:underline"
+                                >
+                                  Quitar
+                                </button>
+                              )}
                             </li>
                           ))}
                         </ul>
                       )}
 
-                      {addingVehicleTo === i.id ? (
+                      {!blockedByShift && (addingVehicleTo === i.id ? (
                         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
                           <input
                             type="number"
@@ -1326,7 +1384,7 @@ export function IntervencionesContent() {
                         >
                           + Agregar vehículo siniestrado
                         </button>
-                      )}
+                      ))}
                     </div>
 
                     <div>
@@ -1346,18 +1404,20 @@ export function IntervencionesContent() {
                                 {v.triage_color ? ` · ${TRIAGE_COLORS.find((c) => c.value === v.triage_color)?.label}` : ""}
                                 {v.transferred ? " · Trasladado" : ""}
                               </span>
-                              <button
-                                onClick={() => handleDeleteVictim(v)}
-                                className="text-xs font-medium text-red-700 hover:underline"
-                              >
-                                Quitar
-                              </button>
+                              {!blockedByShift && (
+                                <button
+                                  onClick={() => handleDeleteVictim(v)}
+                                  className="text-xs font-medium text-red-700 hover:underline"
+                                >
+                                  Quitar
+                                </button>
+                              )}
                             </li>
                           ))}
                         </ul>
                       )}
 
-                      {addingVictimTo === i.id ? (
+                      {!blockedByShift && (addingVictimTo === i.id ? (
                         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                           <select
                             value={victimForm.role ?? ""}
@@ -1494,7 +1554,7 @@ export function IntervencionesContent() {
                         >
                           + Agregar damnificado
                         </button>
-                      )}
+                      ))}
                     </div>
                   </div>
                 )}
@@ -1567,12 +1627,14 @@ export function IntervencionesContent() {
               >
                 Cancelar
               </button>
-              <button
-                onClick={confirmEditUnit}
-                className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark"
-              >
-                Guardar
-              </button>
+              {!blockedByShift && (
+                <button
+                  onClick={confirmEditUnit}
+                  className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark"
+                >
+                  Guardar
+                </button>
+              )}
             </div>
           </div>
         </div>
