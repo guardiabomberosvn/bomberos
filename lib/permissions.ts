@@ -32,6 +32,7 @@ export type SectionKey =
   | "personal"
   | "grupos"
   | "motivos"
+  | "guardias"
   | "notificaciones"
   | "emergencias"
   | "hallazgos"
@@ -93,6 +94,9 @@ export const SECTIONS: SectionDef[] = [
   { key: "personal", label: "Personal", icon: "👥", href: "/personal", group: "configuracion", legacyRoles: ["admin", "guardia", "jefatura"] },
   { key: "grupos", label: "Grupos", icon: "🧑‍🤝‍🧑", href: "/grupos", group: "configuracion", legacyRoles: ["admin", "jefatura"] },
   { key: "motivos", label: "Motivos de asistencia", icon: "🏷️", href: "/motivos", group: "configuracion", legacyRoles: ["admin", "jefatura"] },
+  // Lista fija de nombres para elegir al abrir/cerrar turno en el Libro de
+  // Guardia (reemplaza el texto libre que generaba nombres inconsistentes).
+  { key: "guardias", label: "Guardias", icon: "🧑‍🚒", href: "/guardias", group: "configuracion", legacyRoles: ["admin", "jefatura"] },
   // Pantalla para la tablet compartida del cuartel: el bombero se marca
   // ingreso/egreso escribiendo su legajo. legacyRoles vacío a propósito —
   // nadie la ve por defecto (ni admin), incluida esta sola a mano desde

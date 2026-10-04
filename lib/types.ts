@@ -58,6 +58,18 @@ export interface AttendanceReason {
   is_active: boolean;
 }
 
+// Lista fija de guardias para elegir al abrir/cerrar turno en el Libro de
+// Guardia — reemplaza el campo de texto libre que generaba nombres
+// inconsistentes ("mili" / "Mili Fernandez"). Se administra desde
+// "Guardias" (Administración, solo admin).
+export interface GuardRosterMember {
+  id: string;
+  organization_id: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
 export type NotificationType =
   | "stock_retiro"
   | "stock_bajo"

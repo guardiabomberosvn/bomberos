@@ -125,6 +125,10 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
   // no de las cuentas de la aplicación — la PC de guardia usa una sola cuenta
   // compartida, así que los guardias reales casi nunca tienen cuenta propia.
   const [guardNames, setGuardNames] = useState<string[]>([]);
+  // Lista fija de guardias (activos) para elegir al abrir/cerrar turno —
+  // se administra desde "Guardias" en Administración. Reemplaza el campo de
+  // texto libre que generaba nombres inconsistentes.
+  const [rosterNames, setRosterNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -227,10 +231,16 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
         ((shiftNames as { opened_by_name: string }[]) ?? []).map((s) => s.opened_by_name.trim())
       )
     ).sort((a, b) => a.localeCompare(b, "es"));
+    const { data: roster } = await supabase
+      .from("guard_roster")
+      .select("name")
+      .eq("is_active", true)
+      .order("name");
 
     setProfiles(list);
     setNames(new Map(list.map((p) => [p.id, p.full_name])));
     setGuardNames(uniqueGuardNames);
+    setRosterNames(((roster as { name: string }[]) ?? []).map((r) => r.name));
     setOpenShift((open as GuardShift) ?? null);
     setLoading(false);
   };
@@ -243,6 +253,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
         load();
         loadHistory();
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "guard_roster" }, () => load())
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -333,7 +344,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
 
   const handleOpen = async () => {
     if (!openedByName.trim()) {
-      setError("Escribí el nombre y apellido de quien toma la guardia.");
+      setError("Elegí quién toma la guardia.");
       return;
     }
     setError(null);
@@ -367,7 +378,7 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
   const handleClose = async () => {
     if (!openShift) return;
     if (!closedByName.trim()) {
-      setError("Escribí el nombre y apellido de quien entrega la guardia.");
+      setError("Elegí quién entrega la guardia.");
       return;
     }
     setError(null);
@@ -444,13 +455,18 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
                 <label className="mb-1 block text-xs font-medium text-neutral-600">
                   Nombre y apellido de quien entrega la guardia
                 </label>
-                <input
-                  type="text"
+                <select
                   value={closedByName}
                   onChange={(e) => setClosedByName(e.target.value)}
-                  placeholder="Nombre y apellido"
                   className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm"
-                />
+                >
+                  <option value="">Elegí un guardia…</option>
+                  {rosterNames.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
               </div>
               <textarea
                 value={closeNotes}
@@ -484,13 +500,18 @@ function TurnoTab({ myId, isAdmin }: { myId: string; isAdmin: boolean }) {
             <label className="mb-1 block text-xs font-medium text-neutral-600">
               Nombre y apellido de quien toma la guardia
             </label>
-            <input
-              type="text"
+            <select
               value={openedByName}
               onChange={(e) => setOpenedByName(e.target.value)}
-              placeholder="Nombre y apellido"
               className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-            />
+            >
+              <option value="">Elegí un guardia…</option>
+              {rosterNames.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
           </div>
           <button
             onClick={handleOpen}
