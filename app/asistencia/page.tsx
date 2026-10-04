@@ -11,16 +11,11 @@ import { AVAILABILITY_LABELS } from "@/lib/types";
 
 function AsistenciaContent() {
   const { profile, refreshProfile } = useAuth();
-  // Los bomberos usan el QR como única vía; admin/guardia conservan el
-  // botón manual también para su propia asistencia.
-  const canMarkManually = profile?.role === "admin" || profile?.role === "guardia";
 
   const [openRecord, setOpenRecord] = useState<AttendanceRecord | null>(null);
   const [history, setHistory] = useState<AttendanceRecord[]>([]);
   const [reasons, setReasons] = useState<AttendanceReason[]>([]);
-  const [selectedReasonId, setSelectedReasonId] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
@@ -57,44 +52,6 @@ function AsistenciaContent() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
-
-  const handleCheckIn = async () => {
-    if (!profile) return;
-    if (!selectedReasonId) {
-      setError("Elegí un motivo antes de marcar el ingreso.");
-      return;
-    }
-    setError(null);
-    setWorking(true);
-    const { error: insertError } = await supabase.from("attendance").insert({
-      organization_id: profile.organization_id,
-      firefighter_id: profile.id,
-      type: "cuartel",
-      reason_id: selectedReasonId,
-    });
-    setWorking(false);
-    if (insertError) {
-      setError("No se pudo registrar el ingreso: " + insertError.message);
-      return;
-    }
-    load();
-  };
-
-  const handleCheckOut = async () => {
-    if (!openRecord) return;
-    setError(null);
-    setWorking(true);
-    const { error: updateError } = await supabase
-      .from("attendance")
-      .update({ checked_out_at: new Date().toISOString() })
-      .eq("id", openRecord.id);
-    setWorking(false);
-    if (updateError) {
-      setError("No se pudo registrar la salida: " + updateError.message);
-      return;
-    }
-    load();
-  };
 
   const handleAvailability = async (value: Availability) => {
     if (!profile) return;
@@ -198,63 +155,30 @@ function AsistenciaContent() {
             <p className="text-sm text-neutral-500">
               Motivo: {reasonName(openRecord.reason_id)}
             </p>
-            {canMarkManually ? (
-              <button
-                onClick={handleCheckOut}
-                disabled={working}
-                className="mt-3 rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-900 disabled:opacity-60"
-              >
-                {working ? "Registrando…" : "Marcar salida"}
-              </button>
-            ) : (
-              <Link
-                href="/escanear"
-                className="mt-3 inline-block rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-900"
-              >
-                📷 Escanear QR para marcar salida
-              </Link>
-            )}
+            <Link
+              href="/escanear"
+              className="mt-3 inline-block rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-900"
+            >
+              📷 Escanear QR para marcar salida
+            </Link>
           </>
         ) : (
           <>
             <p className="mt-1 text-lg font-semibold text-neutral-500">
               No estás en el cuartel
             </p>
-            {canMarkManually ? (
-              <>
-                <label className="mt-3 block text-sm">
-                  <span className="mb-1 block font-medium text-neutral-700">
-                    Motivo del ingreso
-                  </span>
-                  <select
-                    value={selectedReasonId}
-                    onChange={(e) => setSelectedReasonId(e.target.value)}
-                    className="w-full rounded-md border border-neutral-300 px-3 py-2"
-                  >
-                    <option value="">Elegí un motivo…</option>
-                    {reasons.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  onClick={handleCheckIn}
-                  disabled={working}
-                  className="mt-3 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-60"
-                >
-                  {working ? "Registrando…" : "Marcar ingreso"}
-                </button>
-              </>
-            ) : (
-              <Link
-                href="/escanear"
-                className="mt-3 inline-block rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark"
-              >
-                📷 Escanear QR para marcar ingreso
-              </Link>
-            )}
+            <Link
+              href="/escanear"
+              className="mt-3 inline-block rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark"
+            >
+              📷 Escanear QR para marcar ingreso
+            </Link>
+            <p className="mt-2 text-xs text-neutral-400">
+              Tu ingreso y tu salida se registran escaneando el QR del
+              cuartel (o en la tablet, si hay una, escribiendo tu legajo).
+              Ya no se puede cargar desde acá a mano — así nadie se marca
+              presente sin estar en el cuartel.
+            </p>
           </>
         )}
       </div>

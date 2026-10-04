@@ -6,7 +6,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { exportToExcel } from "@/lib/export";
-import type { AttendanceReason, AttendanceRecord, Profile } from "@/lib/types";
+import type { AttendanceReason, AttendanceRecord, GuardShift, Profile } from "@/lib/types";
 
 interface Row extends AttendanceRecord {
   profile?: Profile;
@@ -24,18 +24,28 @@ function toLocalInputValue(iso: string | null) {
 
 function AsistenciaGeneralContent() {
   const { profile } = useAuth();
-  const isAdmin = profile?.role === "admin";
+  // La carga rápida, la carga retroactiva y las acciones sobre registros
+  // ajenos son para quien está de guardia (guardia o admin) — un bombero
+  // puede llegar a ver esta pantalla si se le habilita puntualmente, pero
+  // nunca estos controles.
+  const canManage = profile?.role === "admin" || profile?.role === "guardia";
 
   const [rows, setRows] = useState<Row[]>([]);
   const [personal, setPersonal] = useState<Profile[]>([]);
   const [reasons, setReasons] = useState<AttendanceReason[]>([]);
+  const [openShift, setOpenShift] = useState<GuardShift | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterPerson, setFilterPerson] = useState<string>("all");
   const [filterFrom, setFilterFrom] = useState<string>("");
   const [filterTo, setFilterTo] = useState<string>("");
 
-  // Carga manual / edición retroactiva
+  // Carga rápida (un botón por bombero)
+  const [quickOpenFor, setQuickOpenFor] = useState<string | null>(null);
+  const [quickReasonId, setQuickReasonId] = useState("");
+  const [quickSaving, setQuickSaving] = useState(false);
+
+  // Carga retroactiva (cuando alguien se olvidó de marcar)
   const [showManualForm, setShowManualForm] = useState(false);
   const [manualPersonId, setManualPersonId] = useState("");
   const [manualReasonId, setManualReasonId] = useState("");
@@ -64,6 +74,12 @@ function AsistenciaGeneralContent() {
       .select("*")
       .order("sort_order");
 
+    const { data: shift } = await supabase
+      .from("guard_shifts")
+      .select("*")
+      .is("closed_at", null)
+      .maybeSingle();
+
     const profileMap = new Map(((profiles as Profile[]) ?? []).map((p) => [p.id, p]));
     const reasonMap = new Map(
       ((reasonsData as AttendanceReason[]) ?? []).map((r) => [r.id, r.name])
@@ -77,6 +93,7 @@ function AsistenciaGeneralContent() {
 
     setPersonal((profiles as Profile[]) ?? []);
     setReasons((reasonsData as AttendanceReason[]) ?? []);
+    setOpenShift((shift as GuardShift) ?? null);
     setRows(merged);
     setLoading(false);
   };
@@ -86,11 +103,23 @@ function AsistenciaGeneralContent() {
     const channel = supabase
       .channel("asistencia-general")
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "guard_shifts" }, () => load())
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // Nombre del guardia a dejar asentado en lo que se cargue desde esta
+  // pantalla: el del turno de guardia abierto en el Libro de Guardia (no
+  // la cuenta con la que esté logueado quien aprieta el botón, que en la
+  // PC compartida del cuartel puede ser siempre la misma). Si no hay
+  // ningún turno abierto, se avisa en vez de guardar un nombre que no es.
+  const guardName = openShift
+    ? openShift.opened_by_name?.trim() ||
+      personal.find((p) => p.id === openShift.opened_by)?.full_name ||
+      null
+    : null;
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -212,10 +241,62 @@ function AsistenciaGeneralContent() {
       ? personal.find((p) => p.id === filterPerson)?.full_name
       : null;
 
+  // Para la carga rápida: quién está adentro ahora mismo (según el registro
+  // abierto más reciente) y quién no, entre el personal activo.
+  const openByPerson = useMemo(() => {
+    const map = new Map<string, Row>();
+    rows.forEach((r) => {
+      if (!r.checked_out_at) map.set(r.firefighter_id, r);
+    });
+    return map;
+  }, [rows]);
+
+  const notPresent = useMemo(
+    () => personal.filter((p) => p.is_active && !openByPerson.has(p.id)),
+    [personal, openByPerson]
+  );
+  const present = useMemo(
+    () => personal.filter((p) => p.is_active && openByPerson.has(p.id)),
+    [personal, openByPerson]
+  );
+
+  const handleQuickCheckIn = async (personId: string) => {
+    if (!quickReasonId) {
+      setError("Elegí un motivo antes de confirmar el ingreso.");
+      return;
+    }
+    setError(null);
+    setQuickSaving(true);
+    const person = personal.find((p) => p.id === personId);
+    const { error: insertError } = await supabase.from("attendance").insert({
+      organization_id: person?.organization_id,
+      firefighter_id: personId,
+      type: "cuartel",
+      reason_id: quickReasonId,
+      shift_id: openShift?.id ?? null,
+      loaded_by_name: guardName,
+    });
+    setQuickSaving(false);
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+    setQuickOpenFor(null);
+    setQuickReasonId("");
+    load();
+  };
+
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualPersonId || !manualReasonId || !manualCheckIn) {
       setError("Completá persona, motivo y hora de ingreso.");
+      return;
+    }
+    // Mismo chequeo que ya hace la base de datos (la salida no puede ser
+    // anterior al ingreso), pero acá avisamos antes de guardar en vez de
+    // mostrar el error técnico de Supabase.
+    if (manualCheckOut && new Date(manualCheckOut) < new Date(manualCheckIn)) {
+      setError("La hora de salida no puede ser anterior a la de ingreso. Revisá la fecha.");
       return;
     }
     setError(null);
@@ -229,7 +310,9 @@ function AsistenciaGeneralContent() {
       reason_id: manualReasonId,
       checked_in_at: new Date(manualCheckIn).toISOString(),
       checked_out_at: manualCheckOut ? new Date(manualCheckOut).toISOString() : null,
-      notes: `Cargado manualmente por ${profile?.full_name}`,
+      shift_id: openShift?.id ?? null,
+      loaded_by_name: guardName,
+      notes: "Carga retroactiva: se olvidó de marcar.",
     });
 
     setSaving(false);
@@ -283,6 +366,7 @@ function AsistenciaGeneralContent() {
       Ingreso: new Date(r.checked_in_at).toLocaleString("es-AR"),
       Salida: r.checked_out_at ? new Date(r.checked_out_at).toLocaleString("es-AR") : "En curso",
       Duración: formatDuration(r),
+      "Cargado por": r.loaded_by_name ?? "Se registró solo/a",
       Notas: r.notes ?? "",
     }));
     exportToExcel(data, "asistencia", "Asistencia");
@@ -301,12 +385,12 @@ function AsistenciaGeneralContent() {
           >
             📥 Exportar Excel
           </button>
-          {isAdmin && (
+          {canManage && (
             <button
               onClick={() => setShowManualForm((s) => !s)}
-              className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
             >
-              + Carga manual
+              📝 Carga retroactiva
             </button>
           )}
         </div>
@@ -318,13 +402,116 @@ function AsistenciaGeneralContent() {
         </div>
       )}
 
-      {showManualForm && isAdmin && (
+      {canManage && !openShift && (
+        <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          No hay ningún turno de guardia abierto en el Libro de Guardia. Lo
+          que cargues acá va a quedar sin nombre de guardia hasta que
+          alguien abra turno.
+        </div>
+      )}
+
+      {canManage && (
+        <div className="rounded-xl border border-neutral-200 bg-white p-4">
+          <p className="mb-3 text-sm font-semibold text-neutral-800">
+            Carga rápida
+          </p>
+
+          {present.length > 0 && (
+            <div className="mb-4">
+              <p className="mb-2 text-xs font-medium uppercase text-neutral-500">
+                Adentro ahora — tocá para marcar salida
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {present.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      const row = openByPerson.get(p.id);
+                      if (row) handleQuickClose(row);
+                    }}
+                    className="rounded-full bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-900"
+                  >
+                    {p.full_name} · salida
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p className="mb-2 text-xs font-medium uppercase text-neutral-500">
+            Marcar ingreso
+          </p>
+          {notPresent.length === 0 ? (
+            <p className="text-sm text-neutral-500">
+              No hay nadie activo sin registrar.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {notPresent.map((p) =>
+                quickOpenFor === p.id ? (
+                  <div
+                    key={p.id}
+                    className="flex items-center gap-2 rounded-md border border-brand bg-brand-light px-3 py-2"
+                  >
+                    <span className="text-sm font-medium text-neutral-800">
+                      {p.full_name}
+                    </span>
+                    <select
+                      value={quickReasonId}
+                      onChange={(e) => setQuickReasonId(e.target.value)}
+                      autoFocus
+                      className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                    >
+                      <option value="">Motivo…</option>
+                      {reasons.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => handleQuickCheckIn(p.id)}
+                      disabled={quickSaving || !quickReasonId}
+                      className="rounded-md bg-brand px-3 py-1 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-60"
+                    >
+                      {quickSaving ? "…" : "✅ Confirmar"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setQuickOpenFor(null);
+                        setQuickReasonId("");
+                      }}
+                      className="text-sm text-neutral-500 hover:underline"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      setQuickOpenFor(p.id);
+                      setQuickReasonId("");
+                    }}
+                    className="rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+                  >
+                    {p.full_name}
+                  </button>
+                )
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {showManualForm && canManage && (
         <form
           onSubmit={handleManualSubmit}
           className="space-y-3 rounded-xl border border-neutral-200 bg-white p-4"
         >
           <p className="text-sm font-medium text-neutral-700">
-            Cargar asistencia de alguien que se olvidó de marcar
+            Carga retroactiva — para cuando alguien se olvidó de marcar (la
+            carga rápida de arriba es la forma normal de registrar asistencia)
           </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block text-sm">
@@ -521,20 +708,21 @@ function AsistenciaGeneralContent() {
               <th className="px-4 py-3 font-medium">Ingreso</th>
               <th className="px-4 py-3 font-medium">Salida</th>
               <th className="px-4 py-3 font-medium">Duración</th>
+              <th className="px-4 py-3 font-medium">Cargado por</th>
               <th className="px-4 py-3 font-medium">Observaciones</th>
-              {isAdmin && <th className="px-4 py-3 font-medium">Acciones</th>}
+              {canManage && <th className="px-4 py-3 font-medium">Acciones</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-neutral-500">
+                <td colSpan={8} className="px-4 py-6 text-center text-neutral-500">
                   Cargando…
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-neutral-500">
+                <td colSpan={8} className="px-4 py-6 text-center text-neutral-500">
                   No hay registros con estos filtros.
                 </td>
               </tr>
@@ -560,8 +748,11 @@ function AsistenciaGeneralContent() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-neutral-600">{formatDuration(r)}</td>
+                  <td className="px-4 py-3 text-xs text-neutral-500">
+                    {r.loaded_by_name ?? "Se registró solo/a"}
+                  </td>
                   <td className="px-4 py-3 text-xs text-neutral-500">{r.notes ?? "—"}</td>
-                  {isAdmin && (
+                  {canManage && (
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         {!r.checked_out_at && (

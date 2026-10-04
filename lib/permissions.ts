@@ -32,7 +32,8 @@ export type SectionKey =
   | "personal"
   | "grupos"
   | "motivos"
-  | "notificaciones";
+  | "notificaciones"
+  | "kiosko";
 
 export interface SectionDef {
   key: SectionKey;
@@ -72,6 +73,11 @@ export const SECTIONS: SectionDef[] = [
   { key: "personal", label: "Personal", icon: "👥", href: "/personal", group: "configuracion", legacyRoles: ["admin", "guardia"] },
   { key: "grupos", label: "Grupos", icon: "🧑‍🤝‍🧑", href: "/grupos", group: "configuracion", legacyRoles: ["admin"] },
   { key: "motivos", label: "Motivos de asistencia", icon: "🏷️", href: "/motivos", group: "configuracion", legacyRoles: ["admin"] },
+  // Pantalla para la tablet compartida del cuartel: el bombero se marca
+  // ingreso/egreso escribiendo su legajo. legacyRoles vacío a propósito —
+  // nadie la ve por defecto (ni admin), incluida esta sola a mano desde
+  // Administración, en la cuenta fija que se deje cargada en la tablet.
+  { key: "kiosko", label: "Kiosko (tablet)", icon: "🪪", href: "/kiosko", group: "general", legacyRoles: [] },
 ];
 
 export function hasSectionAccess(

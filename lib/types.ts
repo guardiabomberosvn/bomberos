@@ -39,6 +39,14 @@ export interface AttendanceRecord {
   notes: string | null;
   reason_id: string | null;
   created_at: string;
+  // Turno de guardia abierto en el momento en que se cargó el registro (si
+  // lo cargó un guardia por otra persona) — mismo mecanismo que usa Libro
+  // de Guardia. Nulo cuando la persona se registró ella misma (QR o
+  // tablet por legajo).
+  shift_id: string | null;
+  // Nombre del guardia que cargó el registro (tomado del turno abierto, no
+  // de la cuenta con la que esté logueado). Nulo en una autogestión real.
+  loaded_by_name: string | null;
 }
 
 export interface AttendanceReason {
