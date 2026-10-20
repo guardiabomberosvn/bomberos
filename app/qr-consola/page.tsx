@@ -7,6 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
+import { TURNO_GATING_ENABLED } from "@/lib/featureFlags";
 import { EmergencySiren } from "@/components/EmergencySiren";
 import type { Emergency, GuardShift } from "@/lib/types";
 
@@ -30,7 +31,7 @@ function QrConsolaContent() {
   // Un guardia tiene que haber abierto turno en el Libro de Guardia antes de
   // poder generar el QR de la consola — admin y jefatura no dependen de esto.
   const isGuardiaRole = profile?.role === "guardia";
-  const blockedByShift = isGuardiaRole && !openShift;
+  const blockedByShift = TURNO_GATING_ENABLED && isGuardiaRole && !openShift;
 
   useEffect(() => {
     if (!profile) return;

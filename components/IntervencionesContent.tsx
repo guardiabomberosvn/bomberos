@@ -9,6 +9,7 @@ import { StatsBarChart } from "@/components/StatsBarChart";
 import { PrintableParte } from "@/components/PrintableParte";
 import { NameListEditor } from "@/components/NameListEditor";
 import { supabase } from "@/lib/supabase";
+import { TURNO_GATING_ENABLED } from "@/lib/featureFlags";
 import { exportToExcel } from "@/lib/export";
 import type {
   GuardShift,
@@ -65,7 +66,7 @@ export function IntervencionesContent() {
   const [openShift, setOpenShift] = useState<GuardShift | null>(null);
   const [shiftLoading, setShiftLoading] = useState(true);
   const isGuardiaRole = profile?.role === "guardia";
-  const blockedByShift = isGuardiaRole && !openShift;
+  const blockedByShift = TURNO_GATING_ENABLED && isGuardiaRole && !openShift;
 
   useEffect(() => {
     const loadShift = async () => {

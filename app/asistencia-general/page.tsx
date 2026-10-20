@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
+import { TURNO_GATING_ENABLED } from "@/lib/featureFlags";
 import { exportToExcel } from "@/lib/export";
 import { hasSectionAccess } from "@/lib/permissions";
 import type { AttendanceReason, AttendanceRecord, GuardShift, Profile } from "@/lib/types";
@@ -139,8 +140,9 @@ function AsistenciaGeneralContent() {
 
   // Un guardia solo puede operar si hay turno abierto; admin y jefatura
   // pueden siempre (por ejemplo para corregir algo fuera de horario).
-  const canOperateNow = canManage && (!isGuardiaRole || !!openShift);
-  const guardiaBlockedByShift = isGuardiaRole && !openShift;
+  const canOperateNow =
+    canManage && (!TURNO_GATING_ENABLED || !isGuardiaRole || !!openShift);
+  const guardiaBlockedByShift = TURNO_GATING_ENABLED && isGuardiaRole && !openShift;
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {

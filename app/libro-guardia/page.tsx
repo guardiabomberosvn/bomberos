@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
+import { TURNO_GATING_ENABLED } from "@/lib/featureFlags";
 import { exportToExcel, exportToPdf } from "@/lib/export";
 import { StatsBarChart } from "@/components/StatsBarChart";
 import { IntervencionesContent } from "@/components/IntervencionesContent";
@@ -41,7 +42,7 @@ function LibroGuardiaContent() {
   // arriba, una sola vez, y se pasa a cada pestaña.
   const [openShift, setOpenShift] = useState<GuardShift | null>(null);
   const isGuardiaRole = profile?.role === "guardia";
-  const blockedByShift = isGuardiaRole && !openShift;
+  const blockedByShift = TURNO_GATING_ENABLED && isGuardiaRole && !openShift;
 
   useEffect(() => {
     const load = async () => {

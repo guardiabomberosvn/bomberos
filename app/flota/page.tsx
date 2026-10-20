@@ -9,6 +9,7 @@ import { EditVehicleModal } from "@/components/EditVehicleModal";
 import { MaintenanceDetailModal } from "@/components/MaintenanceDetailModal";
 import { MaintenancePreviewModal } from "@/components/MaintenancePreviewModal";
 import { supabase } from "@/lib/supabase";
+import { TURNO_GATING_ENABLED } from "@/lib/featureFlags";
 import { exportMultiSheetExcel } from "@/lib/export";
 import { getVehicleServiceAlertLevel } from "@/lib/maintenance";
 import type {
@@ -84,7 +85,7 @@ function FlotaContent() {
   const [openShift, setOpenShift] = useState<GuardShift | null>(null);
   const [shiftLoading, setShiftLoading] = useState(true);
   const isGuardiaRole = profile?.role === "guardia";
-  const blockedByShift = isGuardiaRole && !openShift;
+  const blockedByShift = TURNO_GATING_ENABLED && isGuardiaRole && !openShift;
 
   useEffect(() => {
     const loadShift = async () => {

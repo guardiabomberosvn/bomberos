@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
+import { TURNO_GATING_ENABLED } from "@/lib/featureFlags";
 import { exportMultiSheetExcel } from "@/lib/export";
 import type { GuardShift, StockItem, StockWithdrawal } from "@/lib/types";
 
@@ -51,7 +52,7 @@ function StockContent() {
   const [openShift, setOpenShift] = useState<GuardShift | null>(null);
   const [shiftLoading, setShiftLoading] = useState(true);
   const isGuardiaRole = profile?.role === "guardia";
-  const blockedByShift = isGuardiaRole && !openShift;
+  const blockedByShift = TURNO_GATING_ENABLED && isGuardiaRole && !openShift;
 
   useEffect(() => {
     const loadShift = async () => {
