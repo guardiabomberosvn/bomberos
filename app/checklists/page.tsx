@@ -18,7 +18,12 @@ import {
   type Profile,
 } from "@/lib/types";
 
-const CATEGORIES: ChecklistCategory[] = ["maquinas", "equipamiento", "herramientas"];
+const CATEGORIES: ChecklistCategory[] = [
+  "vehiculos",
+  "maquinas",
+  "equipamiento",
+  "herramientas",
+];
 
 // Colores del semáforo. Se usan tanto en las insignias como en los botones
 // grandes de la inspección.
@@ -554,7 +559,7 @@ function ChecklistsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [category, setCategory] = useState<ChecklistCategory>("maquinas");
+  const [category, setCategory] = useState<ChecklistCategory>("vehiculos");
   const [filter, setFilter] = useState<Filter>("todos");
   const [search, setSearch] = useState("");
 
@@ -681,7 +686,7 @@ function ChecklistsContent() {
       return;
     }
     const existing = new Set(
-      items.filter((i) => i.category === "maquinas").map((i) => i.name.trim().toLowerCase())
+      items.filter((i) => i.category === "vehiculos").map((i) => i.name.trim().toLowerCase())
     );
     // Si en Flota hay dos vehículos con el mismo nombre, se trae uno solo
     // (la lista no admite nombres repetidos) y se avisa.
@@ -689,7 +694,7 @@ function ChecklistsContent() {
     let repeated = 0;
     const toInsert: {
       organization_id: string;
-      category: "maquinas";
+      category: "vehiculos";
       name: string;
       detail: string | null;
     }[] = [];
@@ -704,7 +709,7 @@ function ChecklistsContent() {
       seen.add(key);
       toInsert.push({
         organization_id: profile.organization_id,
-        category: "maquinas",
+        category: "vehiculos",
         name,
         detail: v.type ?? null,
       });
@@ -863,7 +868,7 @@ function ChecklistsContent() {
               + Agregar
             </button>
           </div>
-          {category === "maquinas" && (
+          {category === "vehiculos" && (
             <button
               type="button"
               onClick={handleImportVehicles}

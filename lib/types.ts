@@ -2,7 +2,7 @@ export type Role = "admin" | "guardia" | "jefatura" | "bombero";
 export type Availability = "disponible" | "no_disponible";
 
 // Checklists de equipos: cada ítem guarda solo su última inspección (semáforo).
-export type ChecklistCategory = "maquinas" | "equipamiento" | "herramientas";
+export type ChecklistCategory = "vehiculos" | "maquinas" | "equipamiento" | "herramientas";
 export type ChecklistStatus = "verde" | "amarillo" | "rojo";
 export type ChecklistAnswer = "si" | "no" | "na";
 
@@ -38,6 +38,7 @@ export interface ChecklistItem {
 }
 
 export const CHECKLIST_CATEGORY_LABELS: Record<ChecklistCategory, string> = {
+  vehiculos: "Vehículos",
   maquinas: "Máquinas",
   equipamiento: "Equipamiento",
   herramientas: "Herramientas",

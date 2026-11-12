@@ -14,7 +14,7 @@ export const CHECKLIST_TEMPLATES: ChecklistTemplate[] = [
   {
     key: "autobomba",
     label: "Autobomba / unidad de ataque",
-    category: "maquinas",
+    category: "vehiculos",
     questions: [
       "Combustible suficiente",
       "Nivel de aceite del motor",
@@ -38,7 +38,7 @@ export const CHECKLIST_TEMPLATES: ChecklistTemplate[] = [
   {
     key: "rescate",
     label: "Unidad de rescate / camioneta",
-    category: "maquinas",
+    category: "vehiculos",
     questions: [
       "Combustible suficiente",
       "Nivel de aceite del motor",
@@ -116,7 +116,7 @@ export const CHECKLIST_TEMPLATES: ChecklistTemplate[] = [
   {
     key: "motobomba",
     label: "Motobomba / generador / ventilador",
-    category: "herramientas",
+    category: "maquinas",
     questions: [
       "Combustible suficiente",
       "Nivel de aceite del motor",
