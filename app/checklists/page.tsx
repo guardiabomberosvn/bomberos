@@ -683,14 +683,32 @@ function ChecklistsContent() {
     const existing = new Set(
       items.filter((i) => i.category === "maquinas").map((i) => i.name.trim().toLowerCase())
     );
-    const toInsert = (vehicles ?? [])
-      .filter((v) => v.name && !existing.has(String(v.name).trim().toLowerCase()))
-      .map((v) => ({
+    // Si en Flota hay dos vehículos con el mismo nombre, se trae uno solo
+    // (la lista no admite nombres repetidos) y se avisa.
+    const seen = new Set(existing);
+    let repeated = 0;
+    const toInsert: {
+      organization_id: string;
+      category: "maquinas";
+      name: string;
+      detail: string | null;
+    }[] = [];
+    (vehicles ?? []).forEach((v) => {
+      const name = String(v.name ?? "").trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (seen.has(key)) {
+        if (!existing.has(key)) repeated += 1;
+        return;
+      }
+      seen.add(key);
+      toInsert.push({
         organization_id: profile.organization_id,
-        category: "maquinas" as const,
-        name: String(v.name).trim(),
+        category: "maquinas",
+        name,
         detail: v.type ?? null,
-      }));
+      });
+    });
     if (toInsert.length === 0) {
       setInfo("No hay vehículos nuevos para traer: todos los de Flota ya están en la lista.");
       return;
@@ -700,7 +718,12 @@ function ChecklistsContent() {
       setError(insertError.message);
       return;
     }
-    setInfo(`Se agregaron ${toInsert.length} vehículo(s) desde Flota.`);
+    setInfo(
+      `Se agregaron ${toInsert.length} vehículo(s) desde Flota.` +
+        (repeated > 0
+          ? ` Se salteó ${repeated} porque en Flota tiene el mismo nombre que otro; podés cargarlo a mano con un nombre distinto.`
+          : "")
+    );
     load();
   };
 
