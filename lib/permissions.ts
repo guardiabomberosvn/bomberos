@@ -36,6 +36,7 @@ export type SectionKey =
   | "notificaciones"
   | "emergencias"
   | "hallazgos"
+  | "checklists"
   | "checkin"
   // No es una página propia: controla, adentro de "Asistencia (todos)", si
   // esa persona ve el resumen de horas/puntos y el ranking "Puntaje por
@@ -85,6 +86,7 @@ export const SECTIONS: SectionDef[] = [
   { key: "libro_guardia", label: "Libro de Guardia", icon: "📖", href: "/libro-guardia", group: "libroGuardia", legacyRoles: ["admin", "guardia", "jefatura"] },
   { key: "stock", label: "Stock", icon: "📦", href: "/stock", group: "libroGuardia", legacyRoles: ["admin", "guardia", "jefatura"] },
   { key: "flota", label: "Flota", icon: "🚒", href: "/flota", group: "operacion", legacyRoles: ["admin", "guardia", "jefatura"] },
+  { key: "checklists", label: "Checklists", icon: "✅", href: "/checklists", group: "operacion", legacyRoles: ["admin", "guardia", "jefatura"] },
   { key: "combustible", label: "Combustible", icon: "⛽", href: "/combustible", group: "libroGuardia", legacyRoles: ["admin", "guardia", "jefatura"] },
   { key: "mantenimiento", label: "Mantenimiento", icon: "🔧", href: "/mantenimiento", group: "operacion", legacyRoles: ["admin", "guardia", "jefatura"] },
   { key: "proveedores", label: "Proveedores", icon: "📇", href: "/proveedores", group: "operacion", legacyRoles: ["admin", "guardia", "jefatura"] },

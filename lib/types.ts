@@ -1,6 +1,54 @@
 export type Role = "admin" | "guardia" | "jefatura" | "bombero";
 export type Availability = "disponible" | "no_disponible";
 
+// Checklists de equipos: cada ítem guarda solo su última inspección (semáforo).
+export type ChecklistCategory = "maquinas" | "equipamiento" | "herramientas";
+export type ChecklistStatus = "verde" | "amarillo" | "rojo";
+export type ChecklistAnswer = "si" | "no" | "na";
+
+export interface ChecklistPoint {
+  id: string;
+  organization_id: string;
+  item_id: string;
+  question: string;
+  sort_order: number;
+  created_at: string;
+}
+
+export const CHECKLIST_ANSWER_LABELS: Record<ChecklistAnswer, string> = {
+  si: "Sí",
+  no: "No",
+  na: "No aplica",
+};
+
+export interface ChecklistItem {
+  id: string;
+  organization_id: string;
+  category: ChecklistCategory;
+  name: string;
+  detail: string | null;
+  status: ChecklistStatus | null;
+  note: string | null;
+  // Respuestas de la última inspección: { [id del punto]: "si" | "no" | "na" }
+  answers: Record<string, ChecklistAnswer>;
+  inspected_by_name: string | null;
+  inspected_at: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export const CHECKLIST_CATEGORY_LABELS: Record<ChecklistCategory, string> = {
+  maquinas: "Máquinas",
+  equipamiento: "Equipamiento",
+  herramientas: "Herramientas",
+};
+
+export const CHECKLIST_STATUS_LABELS: Record<ChecklistStatus, string> = {
+  verde: "Todo bien",
+  amarillo: "Necesita mantenimiento",
+  rojo: "Fuera de servicio",
+};
+
 export interface Profile {
   id: string;
   organization_id: string;
