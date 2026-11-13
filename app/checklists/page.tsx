@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { CHECKLIST_TEMPLATES } from "@/lib/checklistTemplates";
+import {
+  createChecklistPdfFile,
+  loadLogoDataUrl,
+  preloadPdfLibraries,
+  type ChecklistPdfEntry,
+} from "@/lib/checklistPdf";
 import {
   CHECKLIST_ANSWER_LABELS,
   CHECKLIST_CATEGORY_LABELS,
@@ -571,6 +577,13 @@ function ChecklistsContent() {
   const [inspectingId, setInspectingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // PDF: equipos tildados para descargar/compartir. La selección se mantiene
+  // aunque se cambie de pestaña, así se pueden juntar equipos de varias listas.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [canShareFiles, setCanShareFiles] = useState(false);
+  const logoRef = useRef<string | null>(null);
+
   const load = async () => {
     const [itemsRes, pointsRes] = await Promise.all([
       supabase.from("checklist_items").select("*").order("name"),
@@ -597,6 +610,24 @@ function ChecklistsContent() {
     return () => {
       supabase.removeChannel(channel);
     };
+  }, []);
+
+  // Detecta si el dispositivo puede compartir archivos (celulares), y deja
+  // listas de antemano las librerías del PDF y el escudo, para que el PDF
+  // salga enseguida al tocar el botón.
+  useEffect(() => {
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.canShare === "function") {
+        const probe = new File(["x"], "x.pdf", { type: "application/pdf" });
+        setCanShareFiles(navigator.canShare({ files: [probe] }));
+      }
+    } catch {
+      setCanShareFiles(false);
+    }
+    preloadPdfLibraries().catch(() => {});
+    loadLogoDataUrl().then((dataUrl) => {
+      logoRef.current = dataUrl;
+    });
   }, []);
 
   const pointsByItem = useMemo(() => {
@@ -636,6 +667,106 @@ function ChecklistsContent() {
         return diff !== 0 ? diff : a.name.localeCompare(b.name);
       });
   }, [inCategory, filter, search]);
+
+  // --- PDF ------------------------------------------------------------------
+  // Solo cuentan los equipos que siguen existiendo (por si se borró alguno).
+  const selectedIds = items.filter((i) => selected.has(i.id)).map((i) => i.id);
+  const allVisibleSelected = visible.length > 0 && visible.every((i) => selected.has(i.id));
+
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleSelectVisible = () =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      visible.forEach((i) => {
+        if (allVisibleSelected) next.delete(i.id);
+        else next.add(i.id);
+      });
+      return next;
+    });
+
+  // Arma el PDF con los equipos pedidos, ordenados por lista y nombre.
+  const makePdf = async (ids: string[]) => {
+    const idSet = new Set(ids);
+    const entries: ChecklistPdfEntry[] = items
+      .filter((i) => idSet.has(i.id))
+      .sort(
+        (a, b) =>
+          CATEGORIES.indexOf(a.category) - CATEGORIES.indexOf(b.category) ||
+          a.name.localeCompare(b.name)
+      )
+      .map((item) => ({ item, points: pointsByItem.get(item.id) ?? [] }));
+    if (entries.length === 0) return null;
+    const result = await createChecklistPdfFile(entries, {
+      logoDataUrl: logoRef.current,
+      generatedBy: profile?.full_name ?? null,
+    });
+    return { ...result, count: entries.length };
+  };
+
+  const saveBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+
+  const handleDownloadPdf = async (ids: string[]) => {
+    if (pdfBusy || ids.length === 0) return;
+    setError(null);
+    setInfo(null);
+    setPdfBusy(true);
+    try {
+      const result = await makePdf(ids);
+      if (!result) return;
+      saveBlob(result.blob, result.filename);
+      setInfo(`Se descargó el PDF: ${result.filename}`);
+    } catch {
+      setError("No se pudo generar el PDF. Probá de nuevo.");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  // Compartir (celulares): abre el menú para mandar el PDF por WhatsApp, mail,
+  // etc. Si el dispositivo no lo permite, lo descarga.
+  const handleSharePdf = async (ids: string[]) => {
+    if (pdfBusy || ids.length === 0) return;
+    setError(null);
+    setInfo(null);
+    setPdfBusy(true);
+    try {
+      const result = await makePdf(ids);
+      if (!result) return;
+      if (typeof navigator.canShare === "function" && navigator.canShare({ files: [result.file] })) {
+        try {
+          await navigator.share({ files: [result.file], title: result.filename });
+        } catch (shareError) {
+          // Si la persona cierra el menú de compartir no es un error.
+          if ((shareError as { name?: string }).name !== "AbortError") {
+            setError("No se pudo compartir el PDF. Probá descargarlo.");
+          }
+        }
+      } else {
+        saveBlob(result.blob, result.filename);
+        setInfo(`Este dispositivo no permite compartir; se descargó el PDF: ${result.filename}`);
+      }
+    } catch {
+      setError("No se pudo generar el PDF. Probá de nuevo.");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
 
   const switchCategory = (c: ChecklistCategory) => {
     setCategory(c);
@@ -903,6 +1034,52 @@ function ChecklistsContent() {
         />
       </div>
 
+      {!loading && visible.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-neutral-200 bg-white px-4 py-3">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-neutral-700">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              onChange={toggleSelectVisible}
+              className="h-4 w-4"
+            />
+            Seleccionar todos los de esta lista
+          </label>
+          <span className="text-sm text-neutral-500">
+            {selectedIds.length === 0
+              ? "Tildá uno o más equipos para pasarlos a PDF"
+              : `${selectedIds.length} seleccionado${selectedIds.length === 1 ? "" : "s"} en total`}
+          </span>
+          <div className="ml-auto flex flex-wrap gap-2">
+            {selectedIds.length > 0 && (
+              <button
+                onClick={() => setSelected(new Set())}
+                className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+              >
+                Quitar selección
+              </button>
+            )}
+            <button
+              onClick={() => handleDownloadPdf(selectedIds)}
+              disabled={selectedIds.length === 0 || pdfBusy}
+              className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-dark disabled:opacity-40"
+            >
+              {pdfBusy ? "Generando…" : "Descargar PDF"}
+              {!pdfBusy && selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
+            </button>
+            {canShareFiles && (
+              <button
+                onClick={() => handleSharePdf(selectedIds)}
+                disabled={selectedIds.length === 0 || pdfBusy}
+                className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-40"
+              >
+                Compartir
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <p className="text-sm text-neutral-500">Cargando…</p>
       ) : visible.length === 0 ? (
@@ -932,6 +1109,13 @@ function ChecklistsContent() {
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(item.id)}
+                      onChange={() => toggleSelected(item.id)}
+                      aria-label={`Seleccionar ${item.name} para el PDF`}
+                      className="mt-1 h-4 w-4 shrink-0"
+                    />
                     <span
                       className={`mt-1 h-4 w-4 shrink-0 rounded-full ${
                         style ? style.dot : "bg-neutral-300"
@@ -980,14 +1164,22 @@ function ChecklistsContent() {
                       )}
                       {item.inspected_at && (
                         <p className="mt-1 text-xs text-neutral-400">
-                          Última inspección: {formatDate(item.inspected_at)}
-                          {item.inspected_by_name ? ` · ${item.inspected_by_name}` : ""}
+                          Inspeccionó: {item.inspected_by_name || "sin nombre"} ·{" "}
+                          {formatDate(item.inspected_at)}
                         </p>
                       )}
                     </div>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => handleDownloadPdf([item.id])}
+                      disabled={pdfBusy}
+                      title="Descargar este checklist en PDF"
+                      className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-40"
+                    >
+                      PDF
+                    </button>
                     {canInspect && item.is_active && !isInspecting && (
                       <button
                         onClick={() => startInspecting(item)}
